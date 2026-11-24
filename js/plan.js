@@ -166,7 +166,7 @@ function drawRes(){
   if (!results) return;
   if (!results.length) { el.innerHTML = `<div class="hero"><h1>${L('搵唔到路線', 'No routes found')}</h1><p>${L('起點或者目的地 600 米內冇車站，或者要轉多過一次車。', 'No stops within 600 m of either end, or more than one change is needed.')}</p></div>`; return; }
   el.innerHTML = `<p class="lbl pad">${L(`${results.length} 個方案 · 按到達時間排`, `${results.length} options · by arrival`)}</p>` + results.map((o, i) => {
-    const tot = Math.max(1, Math.round((o.arriveT - Date.now()) / 60000)), lv = mins(o.leaveT);
+    const tot = Math.max(1, Math.round((o.arriveT - Math.max(Date.now(), o.leaveT)) / 60000)), lv = mins(o.leaveT);
     return `<article class="opt${i === open ? ' open' : ''}" data-i="${i}">
       <button class="opt-h" type="button" aria-expanded="${i === open}">
         <span class="opt-arr"><small>${L('約', 'Arrive')}</small>${hhmm(o.arriveT)}<small>${L('到', '')}</small></span>
