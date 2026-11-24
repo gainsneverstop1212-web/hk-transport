@@ -56,7 +56,7 @@ function mtrPicker(){
 }
 function lrtPicker(){
   const by = new Map();
-  for (const e of entriesOf(r => r.co[0] === 'lightRail')) { if (!by.has(e[1].route)) by.set(e[1].route, []); by.get(e[1].route).push(e); }
+  for (const e of entriesOf(r => r.co[0] === 'lightRail')) { const n = e[1].route.replace('*', ''); if (!by.has(n)) by.set(n, []); by.get(n).push(e); }
   return [...by.keys()].sort(natural).map(n => `<section class="linecard lrt" id="ln-${esc(n)}"><header>${routeTiles(n.replace('*', ''))}<h3>${L(`輕鐵 ${esc(n.replace('*', ''))} 綫`, `Light Rail ${esc(n.replace('*', ''))}`)}</h3></header><div class="dirs">${directions(by.get(n)).map(dirBtn).join('')}</div></section>`).join('');
 }
 function ferryPicker(){
@@ -65,7 +65,7 @@ function ferryPicker(){
   return [...by].map(([co, list]) => `<section class="linecard ferry"><header><span class="lc-bar" style="--c:${'#4aa3df'}"></span><h3>${esc(coName(co))}</h3></header><div class="dirs">${directions(list).map(dirBtn).join('')}</div></section>`).join('');
 }
 function railShortcuts(){
-  const lrtN = [...new Set(entriesOf(r => r.co[0] === 'lightRail').map(([, r]) => r.route))].sort(natural);
+  const lrtN = [...new Set(entriesOf(r => r.co[0] === 'lightRail').map(([, r]) => r.route.replace('*', '')))].sort(natural);
   return `<p class="lbl pad">${L('港鐵', 'MTR')}</p><div class="linegrid">${Object.keys(LINES).filter(c => S.NUMS.has(c)).map(c => `<button type="button" class="lineb" data-jump="mtr" data-line="${c}" style="--c:${lineColor(c)}">${esc(lineName(c))}</button>`).join('')}</div>
     <p class="lbl pad">${L('輕鐵', 'Light Rail')}</p><div class="linegrid lrt">${lrtN.map(n => `<button type="button" class="lineb lr" data-jump="lrt" data-line="${esc(n)}">${esc(n.replace('*', ''))}</button>`).join('')}</div>`;
 }
