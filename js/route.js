@@ -139,9 +139,11 @@ export function openRoute(key, focusStop){
   let sel = focusStop ? stops.indexOf(focusStop) : -1;
   if (sel < 0 && focusStop) for (const c of r.co) { const i = (r.stops[c] || []).indexOf(focusStop); if (i >= 0) sel = i; }
   if (sel < 0 && S.here) { let best = 1500; stops.forEach((id, i) => { const d = dist(S.here, stopLoc(id) || S.here); if (d < best && i < stops.length - 1) { best = d; sel = i; } }); }
-  let board = sel >= 0 ? sel : null, alight = null, etas = null, timer = null, map = null, line = null;
+  const nearest = sel;                         // 只係標示最近嘅站，唔會自動當上車站
+  let board = null, alight = null, etas = null, timer = null, map = null, line = null;
   const si = serviceInfo(r), mtr = co === 'mtr';
   const opp = findOpposite(key, r, co);
+  const nearestChip = sel >= 0 && S.here ? `<button class="chip" type="button" data-near>${icon.pin} ${L('最近你：', 'Nearest: ')}${esc(stopName(stops[sel]))}</button>` : '';
   const pg = openPage('route-page');
   pg.innerHTML = `<header class="pg-h"><button class="icon-btn" data-back type="button" aria-label="${L('返回', 'Back')}">${icon.back}</button>
       ${tilesFor(r)}<div class="pg-t"><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${L('由 ', 'From ')}${esc(nm(r.orig))} · ${r.co.map(coName).join(' + ')}</small></div></header>
@@ -152,6 +154,7 @@ export function openRoute(key, focusStop){
         ${si?.hw ? `<span class="fact">${L(`而家約 ${si.hw} 分鐘一班`, `Every ~${si.hw} min now`)}</span>` : ''}
         ${r.jt ? `<span class="fact">${L(`全程約 ${r.jt} 分鐘`, `~${r.jt} min end to end`)}</span>` : ''}
         ${String(r.serviceType) !== '1' ? `<span class="fact warn">${L('特別班次', 'Special service')}</span>` : ''}
+        ${nearestChip}
       </div>
       <div class="rmap" id="rmap"></div>
       <p class="lbl pad">${L('撳一個站睇到站時間，揀上車同落車站就可以開始出門倒數', 'Tap a stop for arrivals; pick where you get on and off to start a countdown')}</p>
@@ -161,6 +164,7 @@ export function openRoute(key, focusStop){
   pg.querySelector('[data-back]').onclick = () => pg.close();
   pg.querySelector('[data-opp]')?.addEventListener('click', e => { const k = e.currentTarget.dataset.opp; pg.close(); setTimeout(() => openRoute(k), 60); });
   pg.addEventListener('close', () => clearInterval(timer));
+  pg.querySelector('[data-near]')?.addEventListener('click', () => pg.querySelector(`li[data-i="${nearest}"]`)?.scrollIntoView({block: 'center', behavior: 'smooth'}));
 
   const list = pg.querySelector('#stops');
   const cum = i => board != null && i > board ? Math.round(rideMin(r, co, board, i)) : null;
@@ -172,7 +176,7 @@ export function openRoute(key, focusStop){
         <button class="st-btn" type="button" aria-expanded="${isSel}"><span class="st-n">${i + 1}</span><span class="st-name">${esc(stopName(id))}</span>
         <span class="st-m">${i === board ? `<em class="tag y">${L('上車', 'Board')}</em>` : i === alight ? `<em class="tag w">${L('落車', 'Alight')}</em>` : c != null ? `+${c}′` : ''}${f != null && i < stops.length - 1 ? `<small>${money(f)}</small>` : ''}</span></button>
         ${isSel ? `<div class="st-x"><div class="st-etas">${etas == null ? `<span class="none">${L('載入中…', 'Loading…')}</span>` : etas.list.filter(e => mins(e.t) >= 0).slice(0, 3).map(e => `<span class="${e.sched ? 'sched' : ''}"><b>${mins(e.t) <= 0 ? L('即將', 'now') : mins(e.t) >= 60 ? hhmm(e.t) : mins(e.t) + L(' 分', ' min')}</b><small>${hhmm(e.t)}${e.sched ? ' · ' + L('時間表', 'sched.') : ''}</small></span>`).join('') || `<span class="none">${esc(etas.note || (etas.err ? L('暫時攞唔到資料', 'Unavailable') : L('暫無班次', 'No service')))}</span>`}</div>
-          <div class="st-acts">${i < stops.length - 1 ? `<button class="btn-y sm" data-board type="button">${L('喺度上車', 'Board here')}</button>` : ''}${board != null && i > board ? `<button class="btn-d sm" data-alight type="button">${L('喺度落車', 'Alight here')}</button>` : ''}${starBtn(fid, r.route + ' ' + stopName(id))}</div></div>` : ''}
+          <div class="st-acts">${i < stops.length - 1 && i !== board ? `<button class="btn-y sm" data-board type="button">${L('喺度上車', 'Board here')}</button>` : ''}${board != null && i > board ? `<button class="btn-d sm" data-alight type="button">${L('喺度落車', 'Alight here')}</button>` : ''}${starBtn(fid, r.route + ' ' + stopName(id))}</div></div>` : ''}
       </li>`;
     }).join('');
     const tb = pg.querySelector('#tripbar');
@@ -226,5 +230,5 @@ export function openRoute(key, focusStop){
   })();
   paint(); loadEta();
   timer = setInterval(() => { if (!document.hidden) loadEta(); }, 30000);
-  setTimeout(() => pg.querySelector('li.open')?.scrollIntoView({block: 'center'}), 120);
+
 }

@@ -2,10 +2,10 @@
 import {S, $, esc, store, L, nm, hhmm, mins, now, flaps, tilesFor, routeLabel, routeTiles, lineTiles, lineName, stopName, stopLoc, dist, rideMin, avgWait,
   speak, notify, toast, icon} from './core.js';
 import {cycle, etaFor} from './eta.js';
-import {openSheet, closeSheet} from './ui.js';
+import {openSheet, closeSheet, addLayer, back} from './ui.js';
 import {planTrip, toTrip, legChips} from './plan.js';
 
-let trip = null, lists = [], tick = null, poll = null, wake = null, gpsW = null, pos = null, lastSay = '', shown = false, lastSig = '';
+let layer = false, trip = null, lists = [], tick = null, poll = null, wake = null, gpsW = null, pos = null, lastSay = '', shown = false, lastSig = '';
 
 export function initTrip(){
   const saved = store.get('trip', null);
@@ -28,14 +28,16 @@ function start(show){
   show ? open() : pill();
 }
 function stop(){
+  if (layer) { layer = false; back(); }          // 一齊清走返回鍵記錄
   clearInterval(tick); clearInterval(poll); tick = poll = null;
   if (gpsW != null) { navigator.geolocation.clearWatch(gpsW); gpsW = null; }
   release(); trip = null; store.del('trip');
   $('trip').hidden = true; $('trip').innerHTML = ''; $('tripPill').hidden = true; shown = false;
   document.body.classList.remove('tripping');
 }
-function open(){ lastSig = ''; shown = true; $('trip').hidden = false; $('tripPill').hidden = true; document.body.classList.add('tripping'); lockScreen(); paint(true); }
-function pill(){ shown = false; $('trip').hidden = true; document.body.classList.remove('tripping'); release(); $('tripPill').hidden = false; paint(); }
+// 倒數畫面加入返回鍵記錄：Android 撳返回會收細倒數，唔會關咗後面嘅頁或者離開 app
+function open(){ if (!layer) { layer = true; addLayer(() => { layer = false; pill(); }); } lastSig = ''; shown = true; $('trip').hidden = false; $('tripPill').hidden = true; document.body.classList.add('tripping'); lockScreen(); paint(true); }
+function pill(){ if (!trip) return; shown = false; $('trip').hidden = true; document.body.classList.remove('tripping'); release(); $('tripPill').hidden = false; paint(); }
 
 async function lockScreen(){ try { if ('wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch {} }
 function release(){ try { wake?.release(); } catch {} wake = null; }
@@ -138,10 +140,16 @@ function paint(force){
       const nx = trip.legs[i + 1];
       if (nx) lines.push(L(`落車後行 ${walkOf(i + 1)} 分鐘轉 ${esc(rname(nx))}（${Y(c.legs[i + 1].boardT)} 到）`, `Then walk ${walkOf(i + 1)} min to the ${esc(rname(nx))} (due ${Y(c.legs[i + 1].boardT)})`));
       else if (trip.to) lines.push(L(`約 ${Y(c.arriveT)} 到 ${esc(trip.to.label)}`, `Arrive ~${Y(c.arriveT)} at ${esc(trip.to.label)}`));
+      // 兩階段提示：快將到站（仲有 2 個站／約 3 分鐘）→ 下一站落車（仲有 1 個站／300 多米）
       const near = sl ? (sl.left <= 1 || sl.dAlight < 350) : rem < 90000;
+      const soon = !near && (sl ? sl.left <= 2 : rem < 210000);
+      const nx2 = trip.legs[i + 1];
       if (near) {
-        alert = L('下一站落車！', 'Next stop — get off!');
+        alert = nx2 ? L(`下一站落車，轉 ${rname(nx2)}！`, `Next stop — change to ${rname(nx2)}!`) : L('下一站落車！', 'Next stop — get off!');
         if (!trip.alerted['a' + i]) { trip.alerted['a' + i] = 1; save(); notify(alert, stopName(l.alight)); speak(L(`下一站${stopName(l.alight)}，準備落車`, `Next stop ${stopName(l.alight)}, get ready to get off`)); }
+      } else if (soon) {
+        alert = L('快將到站，準備落車', 'Almost there — get ready');
+        if (!trip.alerted['p' + i]) { trip.alerted['p' + i] = 1; save(); notify(alert, L(`${stopName(l.alight)} 落車`, `Get off at ${stopName(l.alight)}`)); speak(L(`仲有兩個站就到${stopName(l.alight)}`, `Two stops to ${stopName(l.alight)}`)); }
       }
       btns = [['alight', 'y', icon.door, L('落咗車', 'I’ve got off')], ['cancel', 'd', icon.x, L('取消', 'Cancel')]];
       say = L(`仲有大約 ${Math.max(0, Math.round(rem / 60000))} 分鐘，喺${stopName(l.alight)}落車`, `About ${Math.max(0, Math.round(rem / 60000))} minutes to ${stopName(l.alight)}`);
@@ -203,7 +211,7 @@ document.addEventListener('click', e => {
   if (pl && trip) { open(); return; }
   const b = e.target.closest('#trip [data-a]'); if (!b || !trip) return;
   const a = b.dataset.a;
-  if (a === 'min') pill();
+  if (a === 'min') { if (layer) back(); else pill(); }
   else if (a === 'say') speak(lastSay);
   else if (a === 'cancel') { stop(); toast(L('已取消', 'Cancelled')); }
   else if (a === 'finish') stop();

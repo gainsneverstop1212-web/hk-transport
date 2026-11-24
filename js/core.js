@@ -226,6 +226,29 @@ export function nextDepartures(r, co, seq, n = 3){
   }
   return out.sort((a, b) => a - b).slice(0, n);
 }
+// 由某個時間（可以係聽日）開始，按時間表搵下一班喺呢個站嘅時間
+export function nextDepAfter(r, co, seq, t){
+  if (!r.freq || !Object.keys(r.freq).length) return null;
+  const off = rideMin(r, co, 0, seq) * 60000, base = hkMidnight(), d0 = Math.floor((t - base) / 864e5);
+  for (let d = d0; d <= d0 + 1; d++) {
+    const mid = base + d * 864e5; let best = null;
+    for (const o of [0, -1]) {
+      const di = dayIdxAt(d + o);
+      for (const [sd, v] of Object.entries(r.freq)) {
+        if (String(S.DB.serviceDayMap?.[sd]?.[di]) !== '1') continue;
+        for (const [st, x] of Object.entries(v)) {
+          const s0 = toM(st) + o * 1440, e0 = x ? toM(x[0]) + o * 1440 : null;
+          if (o === -1 && (e0 ?? s0) < 0) continue;
+          if (!x) { const tt = mid + s0 * 60000 + off; if (tt >= t && (best == null || tt < best)) best = tt; continue; }
+          for (let m = s0; m <= e0; m += +x[1] / 60) { const tt = mid + m * 60000 + off; if (tt >= t) { if (best == null || tt < best) best = tt; break; } }
+        }
+      }
+    }
+    if (best != null) return best;
+  }
+  return null;
+}
+export const isMtrStation = id => (S.IDX.get(id) || []).some(e => e.co === 'mtr');
 export const fareAt = (r, seq) => { const f = r.fares?.[seq]; return f != null && f !== '' ? +f : null; };
 export const money = v => v == null ? '' : '$' + (Math.round(v * 10) / 10).toFixed(1);
 

@@ -53,6 +53,7 @@ window.addEventListener('popstate', () => {
   while (stack.length > depth) stack.pop()();
 });
 export const back = () => { if (stack.length) history.back(); };
+export const addLayer = close => pushLayer(close);
 
 /* ---------- 彈出面板 ---------- */
 function hideSheet(){ const sh = $('sheet'); sh.classList.remove('on'); sh.hidden = true; sh.innerHTML = ''; }
@@ -85,13 +86,18 @@ export function openPage(cls = ''){
 export function closeAll(){ if (stack.length) history.go(-stack.length); }
 
 /* ---------- 分頁 ---------- */
+const scrollPos = {};
+let curTab = null;
 export function go(tab){
+  if (curTab) scrollPos[curTab] = window.scrollY;
   closeAll();
   for (const v of document.querySelectorAll('.view')) v.hidden = v.id !== 'v-' + tab;
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false');
   store.set('tab', tab);
   emit('tab', tab);
-  window.scrollTo(0, 0);
+  const y = curTab === tab ? 0 : (scrollPos[tab] || 0);
+  curTab = tab;
+  requestAnimationFrame(() => window.scrollTo(0, y));
 }
 
 /* ---------- 地點搜尋 ---------- */
@@ -115,13 +121,18 @@ export function searchStops(q, limit = 8){
     if (!S.IDX.has(id)) continue;
     const zh = s.name.zh || '', en = (s.name.en || '').toLowerCase();
     if (!zh.toLowerCase().includes(q) && !en.includes(q)) continue;
-    if (!seen.has(zh)) seen.set(zh, {kind: 'stop', name: s.name, lat: s.location.lat, lng: s.location.lng, cos: new Set(), rail: false,
+    // 同名車站如果相距超過 1 公里，當係唔同地方（例如全港有幾個「新圍村」）
+    const key = [...seen.keys()].find(k => k.startsWith(zh + '|') && dist(seen.get(k), s.location) < 1000) || zh + '|' + seen.size;
+    if (!seen.has(key)) seen.set(key, {kind: 'stop', name: s.name, lat: s.location.lat, lng: s.location.lng, cos: new Set(), routes: new Set(), rail: false,
       score: zh === q || zh === q + '站' || en === q ? 0 : zh.startsWith(q) || en.startsWith(q) ? 1 : 2});
-    const x = seen.get(zh);
-    for (const e of S.IDX.get(id)) { x.cos.add(e.co); if (e.co === 'mtr' || e.co === 'lightRail') x.rail = true; }
+    const x = seen.get(key);
+    for (const e of S.IDX.get(id)) { x.cos.add(e.co); if (e.co === 'mtr' || e.co === 'lightRail') x.rail = true; if (x.routes.size < 4 && e.co !== 'mtr') x.routes.add(S.DB.routeList[e.key].route.replace('*', '')); }
     if (seen.size > 300) break;
   }
-  return [...seen.values()].sort((a, b) => (a.score - (a.rail ? 1.5 : 0)) - (b.score - (b.rail ? 1.5 : 0)) || a.name.zh.length - b.name.zh.length).slice(0, limit);
+  const vals = [...seen.values()], cnt = new Map();
+  for (const v of vals) cnt.set(v.name.zh, (cnt.get(v.name.zh) || 0) + 1);
+  for (const v of vals) if (cnt.get(v.name.zh) > 1 && v.routes.size) v.sub = {zh: '途經 ' + [...v.routes].join('、'), en: 'Routes ' + [...v.routes].join(', ')};
+  return vals.sort((a, b) => (a.score - (a.rail ? 1.5 : 0)) - (b.score - (b.rail ? 1.5 : 0)) || a.name.zh.length - b.name.zh.length).slice(0, limit);
 }
 export async function searchPlaces(q){
   q = q.trim(); if (q.length < 2) return [];

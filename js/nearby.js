@@ -23,9 +23,10 @@ export function initNearby(){
     <div class="search">${icon.search}<input id="nq" type="search" placeholder="${L('搜尋車站或地方，例如：理工大學', 'Search a stop or place')}" autocomplete="off" enterkeyhint="search" aria-label="${L('搜尋', 'Search')}"><div class="results" id="nres" role="listbox"></div></div>
     <div class="chips" id="chips"></div>
     <div class="ctrl-row">
-      <div class="seg" id="seg" role="group" aria-label="${L('範圍', 'Radius')}"></div>
-      <div class="seg" id="modeSeg" role="group" aria-label="${L('顯示方式', 'View')}">
-        <button type="button" data-m="list">${L('列表', 'List')}</button><button type="button" data-m="map">${L('地圖', 'Map')}</button>
+      <span class="lbl" aria-hidden="true">${L('米', 'm')}</span>
+      <div class="seg" id="seg" role="group" aria-label="${L('範圍（米）', 'Radius (m)')}"></div>
+      <div class="seg icons" id="modeSeg" role="group" aria-label="${L('顯示方式', 'View')}">
+        <button type="button" data-m="list" aria-label="${L('列表', 'List')}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="2.4"/><circle cx="4" cy="6" r="1.7" fill="currentColor"/><circle cx="4" cy="12" r="1.7" fill="currentColor"/><circle cx="4" cy="18" r="1.7" fill="currentColor"/></svg></button><button type="button" data-m="map" aria-label="${L('地圖', 'Map')}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z M9 3v15 M15 6v15" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg></button>
       </div>
     </div>
   </div></section>
@@ -35,7 +36,7 @@ export function initNearby(){
   attachPicker($('nq'), $('nres'), p => { stopGps(); setHere({...p, mode: 'manual'}); }, {places: true, saved: true});
   $('chips').innerHTML = PRESETS.filter(([c]) => S.DB.stopList[c]).map(([c, zh, en]) => `<button class="chip" type="button" data-c="${c}">${L(zh, en)}</button>`).join('');
   $('chips').onclick = e => { const b = e.target.closest('[data-c]'); if (!b) return; const s = stopLoc(b.dataset.c); stopGps(); setHere({lat: s.lat, lng: s.lng, label: b.textContent + L('站', ' Stn'), mode: 'manual'}); };
-  $('seg').innerHTML = RADII.map(r => `<button type="button" data-r="${r}">${r === 'auto' ? L('自動', 'Auto') : r + L(' 米', 'm')}</button>`).join('');
+  $('seg').innerHTML = RADII.map(r => `<button type="button" data-r="${r}" aria-label="${r === 'auto' ? L('自動範圍', 'Auto radius') : r + L(' 米', ' m')}">${r === 'auto' ? L('自動', 'Auto') : r}</button>`).join('');
   $('seg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b) return; S.set.radius = b.dataset.r === 'auto' ? 'auto' : +b.dataset.r; store.set('settings', S.set); paintCtrl(); makeGroups(); };
   $('modeSeg').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; store.set('nearMode', mode); paintCtrl(); render(); };
   $('board').addEventListener('click', e => { if (e.target.closest('#moreStops')) { maxGroups += 14; makeGroups(); return; } onBoardClick(e); });
@@ -195,7 +196,9 @@ function rowHtml(g, row){
   }
   rowsById.set(fid, {g, row});
   const dest = row.kind === 'mtr' ? (row.dest ? stopName(row.dest) : lineName(row.line)) : nm(row.dest) || L('輕鐵', 'Light Rail');
-  return `<div class="row${isFav(fid) ? ' fav' : ''}${row.stale ? ' stale' : ''}" data-row="${esc(fid)}" tabindex="0" role="button" aria-label="${esc(label + ' ' + L('往', 'to') + ' ' + dest)}">
+  const l0 = live(row)[0], m0 = l0 ? mins(l0.t) : null;
+  const etaTxt = l0 ? (m0 <= 0 ? L('即將到站', 'arriving now') : m0 >= 60 ? L(`${hhmm(l0.t)} 到`, `due ${hhmm(l0.t)}`) : L(`${m0} 分鐘後到`, `in ${m0} minutes`)) : (row.note || L('暫無班次', 'no service'));
+  return `<div class="row${isFav(fid) ? ' fav' : ''}${row.stale ? ' stale' : ''}" data-row="${esc(fid)}" tabindex="0" role="button" aria-label="${esc(label + ' ' + L('往', 'to') + ' ' + dest + '，' + etaTxt)}">
     ${rt}<div class="dst"><b>${L('往', 'To')} ${esc(dest)}</b><small>${sub}</small>${advice(row, g.walk)}</div>
     <div class="eta">${etaCell(row, 'e' + fid)}</div>${starBtn(fid, label + ' ' + dest)}</div>`;
 }

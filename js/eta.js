@@ -16,6 +16,8 @@ export function J(url, opt){
   });
 }
 export const cycle = () => new Map();
+const lrCache = new WeakMap();
+const lrAfter = (r, seq) => { let m = lrCache.get(r); if (!m) { m = {}; lrCache.set(r, m); } return m[seq] || (m[seq] = new Set((r.stops.lightRail || []).slice(seq + 1).map(id => S.DB.stopList[id]?.name.zh))); };
 const once = (memo, k, f) => { if (!memo.has(k)) memo.set(k, f().catch(e => ({__err: e}))); return memo.get(k); };
 const isSched = s => /原定|預定|預計|scheduled/i.test(s || '');
 const rmkOf = (zh, en) => (S.set.lang === 'en' ? en : zh) || zh || '';
@@ -65,7 +67,8 @@ export async function etaFor(memo, co, r, stopId, seq){
       const d = await lrtSta(memo, stopId); if (d.__err) throw d.__err;
       for (const p of d.platform_list || []) for (const e of p.route_list || []) {
         if (e.stop && e.stop !== 0) continue;
-        if (e.route_no !== r.route || !(e.dest_ch === r.dest.zh || /circular/i.test(e.dest_en || ''))) continue;
+        if (String(e.route_no).replace('*', '') !== String(r.route).replace('*', '')) continue;
+        if (!(e.dest_ch === r.dest.zh || /circular/i.test(e.dest_en || '') || lrAfter(r, seq).has(e.dest_ch))) continue;
         const te = String(e.time_en || ''), m = /arriv|depart|^-$/i.test(te) ? 0 : parseInt(te, 10);
         if (isFinite(m)) add(now() + m * 60000, '', {plat: p.platform_id, sched: false});
       }

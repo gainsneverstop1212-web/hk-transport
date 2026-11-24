@@ -31,7 +31,7 @@ a{color:#e6e6e6}
 .sign .wrap{display:flex;align-items:center;gap:10px;min-height:56px}
 .brand{display:flex;align-items:center;gap:10px;font:800 26px/1 var(--disp);margin:0;white-space:nowrap}
 .brand small{font:700 15px/1 var(--disp);letter-spacing:.04em;opacity:.75}
-.lang{margin-left:auto;height:36px;min-width:44px;border:2px solid var(--ink);background:transparent;font:800 15px/1 var(--disp);color:var(--ink)}
+.lang{margin-left:auto;height:42px;min-width:44px;border:2px solid var(--ink);background:transparent;font:800 15px/1 var(--disp);color:var(--ink)}
 .clock{display:flex;gap:3px}
 .clock .f{background:var(--ink);color:var(--yellow);font:700 20px/1 var(--disp);width:22px;height:30px;display:grid;place-items:center;border-radius:3px}
 .clock .sep,.f+.sep{font:800 20px/30px var(--disp);width:6px;text-align:center}
@@ -82,10 +82,16 @@ a{color:#e6e6e6}
 .chip[aria-pressed=true]{background:var(--white);color:var(--ink);border-color:var(--white)}
 .ctrl-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .seg{display:flex;border:1px solid #3a3a3a;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
-.seg button{height:38px;min-width:52px;padding:0 10px;border:0;background:transparent;font:600 15px/1 var(--disp);color:#ddd;white-space:nowrap}
+.seg button{height:44px;min-width:46px;padding:0 10px;border:0;background:transparent;font:600 15px/1 var(--disp);color:#ddd;white-space:nowrap}
 .seg button+button{border-left:1px solid #3a3a3a}
 .seg button[aria-pressed=true]{background:var(--yellow);color:var(--ink)}
 #modeSeg{margin-left:auto}
+.ctrl-row{flex-wrap:nowrap}
+.ctrl-row .lbl{flex:none}
+.seg.icons button{display:grid;place-items:center;min-width:44px}
+.pctl{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.pctl input{height:44px;background:var(--flap);border:1px solid #3a3a3a;padding:0 10px;font-size:16px;color-scheme:dark}
+#pSort{margin-top:10px}
 
 /* ---------- 狀態 ---------- */
 .status{padding:14px 0 4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
@@ -327,7 +333,7 @@ details.more[open]>summary::before{content:"－ "}
 .trip-pill .sep{color:var(--yellow);font:800 18px/28px var(--disp)}
 .tp-l{display:flex;flex-direction:column;align-items:flex-start;font:700 15px/1.1 var(--disp);color:#fff;white-space:nowrap}
 .tp-l small{color:var(--grey);font-size:12px}
-body.paged .trip-pill{top:calc(var(--st) + 68px)}
+body.paged .trip-pill{top:auto;bottom:calc(84px + var(--sb));right:12px}
 
 /* ---------- 彈出面板 ---------- */
 .sheet{position:fixed;inset:0;z-index:80}
@@ -395,5 +401,20 @@ body.paged .trip-pill{top:calc(var(--st) + 68px)}
   .hero h1{font-size:34px}
   .tb{height:92px;font-size:17px}
   .ritem{grid-template-columns:70px minmax(0,1fr) auto}
+}
+@media(max-width:360px){
+  .cols,.row{grid-template-columns:52px minmax(0,1fr) 66px 34px;column-gap:6px}
+  .row{padding:9px 8px}.cols{padding-inline:8px}
+  .f{min-width:13px;font-size:16px;height:26px;padding:0 1px}
+  .rt.s4 .f{min-width:11px;font-size:14px}.rt.s5 .f{min-width:9px;font-size:12px}
+  .rt.ln .f{font-size:14px;min-width:16px}
+  .eta .big .f{font-size:19px;min-width:16px;height:28px}
+  .eta .big.far .f{font-size:14px;min-width:11px}
+  .eta small{font-size:11px}
+  .dst b{font-size:15px}
+  .star{width:34px}
+  .seg button{min-width:40px;padding:0 6px}
+  .stop-h{padding:12px 10px 8px}
+  .clock .f{width:19px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
