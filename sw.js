@@ -1,5 +1,5 @@
 // 港途 service worker：快取 app 外殼（網絡優先），實時到站一律唔快取
-const SHELL = 'hkgo-shell-v3';
+const SHELL = 'hkgo-shell-v4';
 const FILES = ['./', './index.html', './css/app.css', './js/app.js', './js/core.js', './js/eta.js', './js/ui.js', './js/map.js',
   './js/nearby.js', './js/route.js', './js/plan.js', './js/trip.js', './js/saved.js', './js/news.js',
   './manifest.json', './icon-192.png', './icon-512.png'];
@@ -14,7 +14,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const leaflet = u.hostname === 'cdnjs.cloudflare.com' && u.pathname.includes('/leaflet/');
   if (u.origin !== location.origin && !leaflet) return;
-  e.respondWith(fetch(e.request).then(r => {
+  const req = e.request.mode === 'navigate' ? fetch(e.request.url, {cache: 'no-cache'}) : fetch(e.request, {cache: 'no-cache'});
+  e.respondWith(req.then(r => {
     if (r.ok) { const copy = r.clone(); caches.open(SHELL).then(c => c.put(e.request, copy)); }
     return r;
   }).catch(() => caches.match(e.request).then(r => r || (e.request.mode === 'navigate' ? caches.match('./index.html') : Response.error()))));
