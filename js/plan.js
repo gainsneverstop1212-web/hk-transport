@@ -1,5 +1,5 @@
 // 港途 · 點對點規劃（直達 + 一次轉車，用實時到站計時間）
-import {S, $, esc, L, nm, dist, stopsWithin, walkMin, rideMin, avgWait, fareAt, money, stopLoc, stopName, hhmm, mins,
+import {S, $, esc, L, nm, dist, stopsWithin, walkMin, rideMin, avgWait, runningNow, fareAt, money, stopLoc, stopName, hhmm, mins,
   routeTiles, lineTiles, coName, lineName, icon, FERRY, store} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {attachPicker, go, on} from './ui.js';
@@ -62,7 +62,10 @@ async function refine(o, memo){
     const c = res.list.find(e => e.t >= t - 30000);
     let boardT, live = false;
     if (c) { boardT = c.t; live = !c.sched; }
-    else { boardT = t + avgWait(r, l.co) * 60000; o.unsure = true; if (!res.list.length) o.noLive = (o.noLive || 0) + 1; }
+    else {
+      if (!res.list.length && (!runningNow(r) || res.note)) { o.dead = true; }
+      boardT = t + avgWait(r, l.co) * 60000; o.unsure = true;
+    }
     const ride = rideMin(r, l.co, l.bseq, l.aseq) * 60000;
     o.times.push({boardT, live, alightT: boardT + ride});
     t = boardT + ride;
@@ -79,15 +82,18 @@ export async function planTrip(from, to, limit = 6){
   const cands = staticPlan(from, to);
   const pick = [], seenFirst = new Map();
   for (const c of cands) {                                    // 唔好全部都係同一條頭程
-    const k = c.legs[0] ? c.legs[0].co + S.DB.routeList[c.legs[0].key].route : 'walk';
+    const k = c.legs[0] ? S.DB.routeList[c.legs[0].key].route : 'walk';
+    const sig = c.legs.map(l => S.DB.routeList[l.key].route).join('>');
+    if (pick.some(p => p.legs.map(l => S.DB.routeList[l.key].route).join('>') === sig && !c.walkOnly)) continue;
     const n = seenFirst.get(k) || 0; if (n >= 2) continue;
     seenFirst.set(k, n + 1); pick.push(c);
-    if (pick.length >= 14) break;
+    if (pick.length >= 18) break;
   }
   const memo = cycle();
   await Promise.all(pick.map(o => o.walkOnly ? Object.assign(o, {times: [], arriveT: Date.now() + o.walk0 * 60000, leaveT: Date.now(), fare: 0}) : refine(o, memo)));
-  pick.sort((a, b) => (a.noLive || 0) - (b.noLive || 0) || a.arriveT - b.arriveT);
-  return pick.slice(0, limit);
+  const ok = pick.filter(o => !o.dead);
+  ok.sort((a, b) => (a.arriveT + (a.unsure ? 600000 : 0)) - (b.arriveT + (b.unsure ? 600000 : 0)));
+  return ok.slice(0, limit);
 }
 export const toTrip = (o, from, to) => ({from, to, walk0: o.walk0, walkEnd: o.walkEnd, legs: o.legs.map(l => ({key: l.key, co: l.co, board: l.board, bseq: l.bseq, alight: l.alight, aseq: l.aseq, walk: l.walk || 0}))});
 

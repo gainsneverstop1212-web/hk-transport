@@ -164,6 +164,14 @@ export function serviceInfo(r){
   const fmt = s => s.slice(0, 2) + ':' + s.slice(2);
   return {first: fmt(first), last: fmt(last), hw: cur ? Math.round(cur.hw / 60) : null};
 }
+// 而家有冇行（有時間表先判斷；冇時間表當有）
+export function runningNow(r){
+  if (!r.freq || !Object.keys(r.freq).length) return true;
+  const f = todayFreq(r); if (!f.length) return false;
+  const now = new Date(Date.now() + 288e5), m = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const toM = s => (+s.slice(0, 2)) * 60 + (+s.slice(2, 4));
+  return f.some(x => { const a = toM(x.start) - 45, b = toM(x.end || x.start) + 45; return b >= 1440 ? (m >= a || m <= b - 1440) : (m >= a && m <= b); });
+}
 export function rideMin(r, co, i, j){
   if (j <= i) return 0;
   if (co === 'mtr') return (j - i) * 2.3 + 0.5;
