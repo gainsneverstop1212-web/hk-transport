@@ -16,8 +16,11 @@ export const S = {
   DB: null, IDX: new Map(), GRID: new Map(), NUMS: new Map(),
   here: null,
   set: Object.assign({lang: 'zh', walk: 75, radius: 'auto'}, store.get('settings', {})),
-  online: true, lastOk: 0
+  online: true, lastOk: 0, skew: 0
 };
+// 用伺服器時間校正手機時鐘（手機時間唔準都唔會倒數錯）
+export const now = () => Date.now() + S.skew;
+export function syncClock(iso){ const t = Date.parse(iso); if (isNaN(t)) return; const sk = t - Date.now(); S.skew = Math.abs(sk) > 45000 ? sk : 0; }
 export const saveSettings = () => store.set('settings', S.set);
 
 /* ---------- 語言 ---------- */
@@ -47,12 +50,11 @@ export const darkText = c => c === 'SIL' || c === 'EAL';
 export const coTag = co => `<span class="co"><i style="--c:${coColor(co)}"></i>${esc(coName(co))}</span>`;
 
 /* ---------- 時間 ---------- */
-export const mins = t => Math.round((t - Date.now()) / 60000);
+export const mins = t => Math.floor((t - now()) / 60000);
 export const hhmm = t => new Date(t).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Hong_Kong'});
 export const hms = t => new Date(t).toLocaleTimeString('en-GB', {hour12: false, timeZone: 'Asia/Hong_Kong'});
 export const T = s => { if (!s) return null; const v = Date.parse(/T/.test(s) ? s : String(s).replace(/\//g, '-').replace(' ', 'T') + '+08:00'); return isNaN(v) ? null : v; };
-const hkMidnight = () => Math.floor((Date.now() + 288e5) / 864e5) * 864e5 - 288e5;
-const hm2t = s => hkMidnight() + ((+s.slice(0, 2)) * 60 + (+s.slice(2, 4))) * 60000;
+const hkMidnight = () => Math.floor((now() + 288e5) / 864e5) * 864e5 - 288e5;
 
 /* ---------- 翻牌字粒 ---------- */
 const prevFlap = new Map();
@@ -141,46 +143,70 @@ export const compass = deg => {
   return L(['北', '東北', '東', '東南', '南', '西南', '西', '西北'][i], ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][i]);
 };
 
-/* ---------- 時間表 ---------- */
-export function dayIdx(){
-  const hk = new Date(Date.now() + 288e5);
+/* ---------- 時間表（處理埋 24:00 之後嘅班次） ---------- */
+const toM = x => (+x.slice(0, 2)) * 60 + (+x.slice(2, 4));
+const nowM = () => { const d = new Date(now() + 288e5); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+function dayIdxAt(off){
+  const hk = new Date(now() + 288e5 + off * 864e5);
   const ymd = hk.toISOString().slice(0, 10).replace(/-/g, '');
   return (S.DB.holidays || []).includes(ymd) ? 0 : hk.getUTCDay();
 }
+export const dayIdx = () => dayIdxAt(0);
+export const isHoliday = () => dayIdxAt(0) === 0 || dayIdxAt(0) === 6;
+// 今日（以今日零時計分鐘）嘅班次；琴日時間表入面 24:00 之後嘅班次都計埋
 export function todayFreq(r){
-  const di = dayIdx(), out = [];
-  for (const [sd, v] of Object.entries(r.freq || {})) {
-    if (String(S.DB.serviceDayMap?.[sd]?.[di]) !== '1') continue;
-    for (const [st, x] of Object.entries(v)) out.push({start: st, end: x ? x[0] : null, hw: x ? +x[1] : null});
+  const out = [];
+  for (const off of [0, -1]) {
+    const di = dayIdxAt(off);
+    for (const [sd, v] of Object.entries(r.freq || {})) {
+      if (String(S.DB.serviceDayMap?.[sd]?.[di]) !== '1') continue;
+      for (const [st, x] of Object.entries(v)) {
+        const s0 = toM(st) + off * 1440, e0 = x ? toM(x[0]) + off * 1440 : null;
+        if (off === -1 && (e0 ?? s0) < 0) continue;
+        out.push({s: s0, e: e0, hw: x ? +x[1] : null, today: off === 0});
+      }
+    }
   }
-  return out.sort((a, b) => a.start.localeCompare(b.start));
+  return out.sort((a, b) => a.s - b.s);
 }
+const fmtM = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 export function serviceInfo(r){
-  const f = todayFreq(r);
-  if (!f.length) return null;
-  const first = f[0].start, last = f.reduce((m, x) => (x.end || x.start) > m ? (x.end || x.start) : m, '0000');
-  const nowHM = new Date(Date.now() + 288e5).toISOString().slice(11, 16).replace(':', '');
-  const cur = f.find(x => x.end && x.start <= nowHM && nowHM <= x.end);
-  const fmt = s => s.slice(0, 2) + ':' + s.slice(2);
-  return {first: fmt(first), last: fmt(last), hw: cur ? Math.round(cur.hw / 60) : null};
+  const f = todayFreq(r), td = f.filter(x => x.today);
+  if (!td.length) return null;
+  const first = Math.min(...td.map(x => x.s)), last = Math.max(...td.map(x => x.e ?? x.s)), n = nowM();
+  const cur = f.find(x => x.e != null && x.s <= n && n <= x.e);
+  return {first: fmtM(first), last: fmtM(last), overnight: last >= 1440, hw: cur ? Math.round(cur.hw / 60) : null};
 }
 // 而家有冇行（有時間表先判斷；冇時間表當有）
 export function runningNow(r){
   if (!r.freq || !Object.keys(r.freq).length) return true;
-  const f = todayFreq(r); if (!f.length) return false;
-  const now = new Date(Date.now() + 288e5), m = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const toM = s => (+s.slice(0, 2)) * 60 + (+s.slice(2, 4));
-  return f.some(x => { const a = toM(x.start) - 45, b = toM(x.end || x.start) + 45; return b >= 1440 ? (m >= a || m <= b - 1440) : (m >= a && m <= b); });
+  const n = nowM();
+  return todayFreq(r).some(x => n >= x.s - 45 && n <= (x.e ?? x.s) + 45);
+}
+// 每條路線累積行車時間（分鐘），港鐵按綫路速度 + 停站時間計
+const MTR_SPEED = {AEL: 1450, TCL: 1100, EAL: 950, TML: 850};
+const cumCache = new WeakMap();
+export function cumTimes(r, co){
+  let m = cumCache.get(r); if (!m) { m = {}; cumCache.set(r, m); }
+  if (m[co]) return m[co];
+  const st = r.stops[co] || [], n = st.length, seg = [];
+  for (let k = 0; k < n - 1; k++) { const a = stopLoc(st[k]), b = stopLoc(st[k + 1]); seg.push(a && b ? dist(a, b) : 400); }
+  const total = seg.reduce((x, y) => x + y, 0) || 1;
+  const c = [0];
+  for (let k = 0; k < seg.length; k++) {
+    let t;
+    if (co === 'mtr') t = 0.6 + seg[k] / (MTR_SPEED[r.route] || 700);
+    else if (co === 'lightRail') t = 0.4 + seg[k] / 350;
+    else if (r.jt && +r.jt > 0) t = +r.jt * seg[k] / total;
+    else t = seg[k] * 1.3 / 270;
+    c.push(c[k] + t);
+  }
+  return (m[co] = c);
 }
 export function rideMin(r, co, i, j){
-  if (j <= i) return 0;
-  if (co === 'mtr') return (j - i) * 2.3 + 0.5;
-  if (co === 'lightRail') return (j - i) * 1.6;
-  const n = (r.stops[co] || []).length;
-  if (r.jt && n > 1) return +r.jt * (j - i) / (n - 1);
-  let m = 0; const st = r.stops[co];
-  for (let k = i; k < j; k++) { const a = stopLoc(st[k]), b = stopLoc(st[k + 1]); if (a && b) m += dist(a, b); }
-  return m * 1.3 / 270;
+  if (j == null || j <= i) return 0;
+  const c = cumTimes(r, co);
+  return (c[j] ?? c[c.length - 1]) - (c[i] ?? 0);
 }
 export function avgWait(r, co){
   if (co === 'mtr') return 2.5;
@@ -188,12 +214,12 @@ export function avgWait(r, co){
   const si = serviceInfo(r);
   return si?.hw ? Math.min(20, si.hw / 2) : 8;
 }
-// 按時間表推算下幾班（渡輪用，或者冇實時資料時參考）
+// 按時間表推算下幾班（渡輪用）
 export function nextDepartures(r, co, seq, n = 3){
-  const out = [], now = Date.now(), off = rideMin(r, co, 0, seq) * 60000;
+  const out = [], t0 = now(), mid = hkMidnight(), off = rideMin(r, co, 0, seq) * 60000;
   for (const f of todayFreq(r)) {
-    if (!f.hw) { const t = hm2t(f.start) + off; if (t > now - 60000) out.push(t); continue; }
-    for (let t = hm2t(f.start); t <= hm2t(f.end); t += f.hw * 1000) if (t + off > now - 60000) { out.push(t + off); if (out.length > n + 4) break; }
+    if (!f.hw) { const t = mid + f.s * 60000 + off; if (t > t0 - 60000) out.push(t); continue; }
+    for (let m = f.s; m <= f.e; m += f.hw / 60) { const t = mid + m * 60000 + off; if (t > t0 - 60000) { out.push(t); if (out.length > n + 6) break; } }
   }
   return out.sort((a, b) => a - b).slice(0, n);
 }

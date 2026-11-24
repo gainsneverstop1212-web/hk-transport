@@ -8,9 +8,9 @@ import {openRoute} from './route.js';
 import {startTrip} from './trip.js';
 
 const RADII = ['auto', 30, 100, 300, 500];
-const MAX_GROUPS = 14;
+let maxGroups = 14;
 const PRESETS = [['HUH', '紅磡', 'Hung Hom'], ['MOK', '旺角', 'Mong Kok'], ['CEN', '中環', 'Central'], ['CAB', '銅鑼灣', 'Causeway Bay'], ['SHT', '沙田', 'Sha Tin'], ['TUM', '屯門', 'Tuen Mun'], ['TUC', '東涌', 'Tung Chung']];
-let lastView = '', groups = [], effR = 30, note = '', lastFetch = 0, cyc = 0, mode = store.get('nearMode', 'list'), map = null, rowsById = new Map();
+let hiddenN = 0, lastView = '', groups = [], effR = 30, note = '', lastFetch = 0, cyc = 0, mode = store.get('nearMode', 'list'), map = null, rowsById = new Map();
 
 export function initNearby(){
   const v = $('v-near');
@@ -38,10 +38,11 @@ export function initNearby(){
   $('seg').innerHTML = RADII.map(r => `<button type="button" data-r="${r}">${r === 'auto' ? L('自動', 'Auto') : r + L(' 米', 'm')}</button>`).join('');
   $('seg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b) return; S.set.radius = b.dataset.r === 'auto' ? 'auto' : +b.dataset.r; store.set('settings', S.set); paintCtrl(); makeGroups(); };
   $('modeSeg').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; store.set('nearMode', mode); paintCtrl(); render(); };
-  $('board').addEventListener('click', onBoardClick);
+  $('board').addEventListener('click', e => { if (e.target.closest('#moreStops')) { maxGroups += 14; makeGroups(); return; } onBoardClick(e); });
+  $('board').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-row]')) { e.preventDefault(); onBoardClick(e); } });
   paintCtrl();
 
-  on('here', p => { paintLoc(); makeGroups(); });
+  on('here', p => { maxGroups = 14; paintLoc(); makeGroups(); });
   on('acc', paintLoc);
   on('gps', st => {
     $('gpsBtn').toggleAttribute('aria-busy', st === 'busy');
@@ -70,11 +71,26 @@ function paintLoc(){
 }
 
 /* ---------- 分組 ---------- */
+// 車站行車方向：用之後兩三個站嘅位置計（轉彎位都比較準）
+const headCache = new Map();
+function stopHeading(id){
+  if (headCache.has(id)) return headCache.get(id);
+  const a = stopLoc(id); let h = null;
+  for (const e of S.IDX.get(id) || []) {
+    if (e.co === 'mtr' || e.co === 'lightRail') continue;
+    const st = S.DB.routeList[e.key].stops[e.co];
+    for (let k = e.seq + 1; k < Math.min(st.length, e.seq + 4); k++) { const b = stopLoc(st[k]); if (a && b && dist(a, b) > 120) { h = bearing(a, b); break; } }
+    if (h == null && e.seq + 1 < st.length) { const b = stopLoc(st[e.seq + 1]); if (a && b && dist(a, b) > 20) h = bearing(a, b); }
+    if (h != null) break;
+  }
+  headCache.set(id, h); return h;
+}
+const angDiff = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
 function makeGroups(){
   if (!S.here) return;
   const want = S.set.radius;
   let near = [], ladder = want === 'auto' ? [30, 100, 300] : RADII.filter(r => r !== 'auto' && r >= want);
-  note = '';
+  note = ''; hiddenN = 0;
   for (const r of ladder) {
     near = stopsWithin(S.here, r); effR = r;
     const named = new Set(near.map(s => S.DB.stopList[s.id].name.zh));
@@ -86,18 +102,19 @@ function makeGroups(){
   for (const s of near) {
     const st = S.DB.stopList[s.id], ents = S.IDX.get(s.id) || [];
     const rail = ents.some(e => e.co === 'mtr' || e.co === 'lightRail');
-    let g = gs.find(x => x.name.zh === st.name.zh && dist(x.loc, st.location) < 30);
-    if (!g) { if (gs.length >= MAX_GROUPS && !rail) continue; g = {name: st.name, loc: st.location, d: s.d, stops: [], rows: new Map(), dyn: [], loaded: false, rail: false}; gs.push(g); }
+    const h = rail ? null : stopHeading(s.id);
+    // 同名車站：30 米內，或者 100 米內而且同一個行車方向，先當係同一個站（對面馬路會分開）
+    let g = gs.find(x => x.name.zh === st.name.zh && (dist(x.loc, st.location) < 30 && (h == null || x.h0 == null || angDiff(h, x.h0) < 100) || dist(x.loc, st.location) < 100 && h != null && x.h0 != null && angDiff(h, x.h0) < 45));
+    if (!g) { if (gs.length >= maxGroups && !rail) { hiddenN++; continue; } g = {name: st.name, loc: st.location, d: s.d, stops: [], rows: new Map(), dyn: [], loaded: false, rail: false, h0: h}; gs.push(g); }
     g.stops.push(s.id); if (rail) g.rail = true;
   }
   for (const g of gs) {
-    g.walk = walkMin(g.d); g.cos = new Set(); g.heading = null;
+    g.walk = walkMin(g.d); g.cos = new Set(); g.heading = g.h0;
     for (const id of g.stops) for (const e of S.IDX.get(id) || []) {
       const r = S.DB.routeList[e.key], st = r.stops[e.co];
       g.cos.add(e.co);
       if (e.co === 'mtr' || e.co === 'lightRail') continue;
       if (e.seq === st.length - 1) continue;
-      if (g.heading == null) { const a = stopLoc(id), b = stopLoc(st[e.seq + 1]); if (a && b && dist(a, b) > 30) g.heading = bearing(a, b); }
       let row = g.rows.get(e.key);
       if (!row) { row = {kind: 'bus', key: e.key, co: e.co, cos: new Set(), route: r.route, dest: r.dest, etas: [], note: '', srcs: []}; g.rows.set(e.key, row); }
       row.cos.add(e.co);
@@ -207,6 +224,7 @@ export function render(){
     bd.innerHTML = `<div class="hero"><div class="bigflap" aria-hidden="true">${flaps(L('揀地點', 'PICK'))}</div><h1>${L('附近有咩車，幾耐到？', 'What’s nearby, and when?')}</h1><p>${L('撳「定位」用你而家嘅位置，或者搜尋車站、地方，或者揀一個常用地點。', 'Tap Locate, search a stop or place, or pick a preset.')}</p></div>`;
     return;
   }
+  const ae = document.activeElement, focusKey = bd.contains(ae) ? (ae.dataset.fav ? 'f:' + ae.dataset.fav : ae.dataset.row ? 'r:' + ae.dataset.row : '') : '';
   const open = new Set([...bd.querySelectorAll('details[open]')].map(d => d.closest('[aria-label]')?.getAttribute('aria-label') + (d.classList.contains('compact') ? '#c' : '')));
   rowsById = new Map();
   const n = groups.length;
@@ -216,7 +234,8 @@ export function render(){
   st.innerHTML = h;
   $('nmap').hidden = mode !== 'map';
   if (mode === 'map') drawMap();
-  bd.innerHTML = n ? groups.map(groupHtml).join('') : `<div class="hero"><h1>${L('附近冇車站', 'No stops nearby')}</h1><p>${L('試下揀大啲嘅範圍，或者搜尋另一個地方。', 'Try a larger radius or another place.')}</p></div>`;
+  bd.innerHTML = n ? groups.map(groupHtml).join('') + (hiddenN ? `<button class="btn-d big" id="moreStops" type="button">${L(`仲有 ${hiddenN} 個車站，顯示更多`, `${hiddenN} more stops — show more`)}</button>` : '') : `<div class="hero"><h1>${L('附近冇車站', 'No stops nearby')}</h1><p>${L('試下揀大啲嘅範圍，或者搜尋另一個地方。', 'Try a larger radius or another place.')}</p></div>`;
+  if (focusKey) { const el = focusKey.startsWith('f:') ? bd.querySelector(`[data-fav="${CSS.escape(focusKey.slice(2))}"]`) : bd.querySelector(`[data-row="${CSS.escape(focusKey.slice(2))}"]`); el?.focus({preventScroll: true}); }
   for (const d of bd.querySelectorAll('details')) if (open.has(d.closest('[aria-label]')?.getAttribute('aria-label') + (d.classList.contains('compact') ? '#c' : ''))) d.open = true;
 }
 
@@ -255,24 +274,39 @@ function onBoardClick(e){
   const r = e.target.closest('[data-row]');
   if (!r) return;
   const x = rowsById.get(r.dataset.row);
-  if (!x || x.row.kind !== 'bus') { if (x) toast(L('港鐵同輕鐵請用「規劃」頁計路線', 'Use the Plan tab for MTR / Light Rail trips')); return; }
-  rowSheet(x.g, x.row);
+  if (!x) return;
+  if (x.row.kind === 'bus') { rowSheet(x.g, x.row.key, x.row.srcs[0], [...x.row.cos], live(x.row), x.row.note); return; }
+  const src = railEntry(x.g, x.row);
+  if (!src) { toast(L('暫時搵唔到呢班車嘅路線資料', 'Route details unavailable')); return; }
+  rowSheet(x.g, src.key, src, [src.co], live(x.row), x.row.note);
 }
-function rowSheet(g, row){
-  const s = row.srcs[0], r = S.DB.routeList[row.key], st = r.stops[s.co];
+// 港鐵／輕鐵行：搵返對應嘅路線（綫、方向、目的地）
+function railEntry(g, row){
+  for (const id of g.stops) for (const e of S.IDX.get(id) || []) {
+    const r = S.DB.routeList[e.key], st = r.stops[e.co];
+    if (row.kind === 'mtr' && e.co === 'mtr' && r.route === row.line && e.seq < st.length - 1) {
+      if (row.dir && !(r.bound.mtr || '').startsWith(row.dir === 'UP' ? 'U' : 'D')) continue;
+      if (row.dest && !st.slice(e.seq + 1).includes(row.dest)) continue;
+      return {key: e.key, co: 'mtr', stop: id, seq: e.seq};
+    }
+    if (row.kind === 'lrt' && e.co === 'lightRail' && r.route === row.route && e.seq < st.length - 1 && (!row.dest || r.dest.zh === row.dest.zh)) return {key: e.key, co: 'lightRail', stop: id, seq: e.seq};
+  }
+  return null;
+}
+function rowSheet(g, key, s, cos, list, note){
+  const r = S.DB.routeList[key], st = r.stops[s.co], row = {route: r.route, key};
   const opts = st.slice(s.seq + 1).map((id, k) => `<option value="${s.seq + 1 + k}">${esc(stopName(id))}</option>`).join('');
-  const list = live(row);
-  openSheet(`<div class="sh-head">${routeTiles(row.route)}<div><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${esc(nm(g.name))} · ${[...row.cos].map(coName).join(' + ')}</small></div></div>
-    <div class="sh-etas">${list.length ? list.slice(0, 3).map(e => `<span class="${e.sched ? 'sched' : ''}"><b>${mins(e.t) <= 0 ? L('即將', 'now') : mins(e.t) >= 60 ? hhmm(e.t) : mins(e.t) + L(' 分', ' min')}</b><small>${hhmm(e.t)}</small></span>`).join('') : `<span class="none">${esc(row.note || L('暫無班次', 'No service'))}</span>`}</div>
+  openSheet(`<div class="sh-head">${s.co === 'mtr' ? lineTiles(r.route) : routeTiles(r.route)}<div><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${esc(nm(g.name))} · ${cos.map(coName).join(' + ')}</small></div></div>
+    <div class="sh-etas">${list.length ? list.slice(0, 3).map(e => `<span class="${e.sched ? 'sched' : ''}"><b>${mins(e.t) <= 0 ? L('即將', 'now') : mins(e.t) >= 60 ? hhmm(e.t) : mins(e.t) + L(' 分', ' min')}</b><small>${hhmm(e.t)}</small></span>`).join('') : `<span class="none">${esc(note || L('暫無班次', 'No service'))}</span>`}</div>
     <label class="fld"><span>${L('喺邊個站落車？（可以唔揀）', 'Get off at (optional)')}</span><select id="alight"><option value="">${L('未決定', 'Not sure yet')}</option>${opts}</select></label>
     <div class="sh-btns"><button class="btn-y big" id="goTrip" type="button">${icon.door}<span>${L('出門倒數', 'Leave countdown')}</span></button>
     <button class="btn-d big" id="seeRoute" type="button">${icon.bus}<span>${L('睇成條路線', 'Whole route')}</span></button></div>`, card => {
-    card.querySelector('#seeRoute').onclick = () => { closeSheet(); setTimeout(() => openRoute(row.key, s.stop), 30); };
+    card.querySelector('#seeRoute').onclick = () => { closeSheet(); setTimeout(() => openRoute(key, s.stop), 30); };
     card.querySelector('#goTrip').onclick = () => {
       const a = card.querySelector('#alight').value;
       closeSheet();
       startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: g.walk,
-        legs: [{key: row.key, co: s.co, board: s.stop, bseq: s.seq, alight: a ? st[+a] : null, aseq: a ? +a : null}], walkEnd: 0,
+        legs: [{key, co: s.co, board: s.stop, bseq: s.seq, alight: a ? st[+a] : null, aseq: a ? +a : null}], walkEnd: 0,
         to: a ? {label: stopName(st[+a]), ...stopLoc(st[+a])} : null});
     };
   });

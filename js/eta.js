@@ -1,5 +1,5 @@
 // 港途 · 實時到站
-import {S, T, L, FERRY, nextDepartures} from './core.js';
+import {S, T, L, FERRY, nextDepartures, now, syncClock} from './core.js';
 
 let active = 0; const queue = [];
 export function J(url, opt){
@@ -32,7 +32,7 @@ export async function etaFor(memo, co, r, stopId, seq){
   const add = (t, rmk = '', x = {}) => { if (t != null) out.list.push({t, rmk, sched: x.sched ?? isSched(rmk), ...x}); else if (rmk && !out.note) out.note = rmk; };
   try {
     if (co === 'kmb') {
-      const d = await kmbStop(memo, stopId); if (d.__err) throw d.__err;
+      const d = await kmbStop(memo, stopId); if (d.__err) throw d.__err; if (d.generated_timestamp) syncClock(d.generated_timestamp);
       for (const e of d.data || []) if (e.route === r.route && bound.includes(e.dir) && String(e.service_type) === String(r.serviceType)) add(T(e.eta), rmkOf(e.rmk_tc, e.rmk_en));
     } else if (co === 'ctb') {
       const d = await once(memo, `ctb${stopId}/${r.route}`, () => J(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${stopId}/${encodeURIComponent(r.route)}`)); if (d.__err) throw d.__err;
@@ -53,7 +53,7 @@ export async function etaFor(memo, co, r, stopId, seq){
       const b = (d.busStop || []).find(x => x.busStopId === stopId);
       for (const x of (b && b.bus) || []) {
         const sec = Number(x.arrivalTimeInSecond) > 0 ? Number(x.arrivalTimeInSecond) : Number(x.departureTimeInSecond);
-        if (isFinite(sec)) add(Date.now() + sec * 1000, x.busRemark || '', {sched: String(x.isScheduled) === '1'});
+        if (isFinite(sec)) add(now() + sec * 1000, x.busRemark || '', {sched: String(x.isScheduled) === '1'});
       }
       if (!b && d.routeStatusRemarkTitle) out.note = d.routeStatusRemarkTitle;
     } else if (co === 'mtr') {
@@ -67,7 +67,7 @@ export async function etaFor(memo, co, r, stopId, seq){
         if (e.stop && e.stop !== 0) continue;
         if (e.route_no !== r.route || !(e.dest_ch === r.dest.zh || /circular/i.test(e.dest_en || ''))) continue;
         const te = String(e.time_en || ''), m = /arriv|depart|^-$/i.test(te) ? 0 : parseInt(te, 10);
-        if (isFinite(m)) add(Date.now() + m * 60000, '', {plat: p.platform_id, sched: false});
+        if (isFinite(m)) add(now() + m * 60000, '', {plat: p.platform_id, sched: false});
       }
     } else if (FERRY.has(co)) {
       for (const t of nextDepartures(r, co, seq)) add(t, L('時間表', 'Timetable'), {sched: true});
@@ -110,7 +110,7 @@ export async function lrtBoard(memo, stopId){
     const k = `lrt:${stopId}:${e.route_no}:${e.dest_ch}`;
     if (!m.has(k)) m.set(k, {kind: 'lrt', key: k, route: e.route_no, dest: {zh: e.dest_ch, en: e.dest_en}, plat: p.platform_id, etas: []});
     const te = String(e.time_en || ''), mm = /arriv|depart|^-$/i.test(te) ? 0 : parseInt(te, 10);
-    if (isFinite(mm)) m.get(k).etas.push({t: Date.now() + mm * 60000, rmk: e.train_length ? L(`${e.train_length} 卡`, `${e.train_length}-car`) : '', sched: false});
+    if (isFinite(mm)) m.get(k).etas.push({t: now() + mm * 60000, rmk: e.train_length ? L(`${e.train_length} 卡`, `${e.train_length}-car`) : '', sched: false});
   }
   return [...m.values()];
 }

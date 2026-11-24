@@ -63,6 +63,29 @@ function itemHtml(k){
     <span class="ri-c">${r.co.map(coTag).join(' ')}${special}</span></button>`;
 }
 
+/* ---------- 對頭線：名稱寬鬆比較，唔啱就用頭尾站位置配對 ---------- */
+const norm = s => String(s || '').replace(/[\s()（）,，.\-]/g, '').toLowerCase();
+function findOpposite(key, r, co){
+  const st = r.stops[co] || [], a0 = stopLoc(st[0]), a1 = stopLoc(st[st.length - 1]);
+  let best = null, bestScore = Infinity;
+  for (const [k, x] of Object.entries(S.DB.routeList)) {
+    if (k === key || x.route !== r.route || x.co[0] !== r.co[0]) continue;
+    const xs = x.stops[x.co[0]] || [];
+    let score = String(x.serviceType) === String(r.serviceType) ? 0 : 50;
+    if (norm(x.orig.zh) === norm(r.dest.zh) && norm(x.dest.zh) === norm(r.orig.zh)) score += 0;
+    else {
+      const b0 = stopLoc(xs[0]), b1 = stopLoc(xs[xs.length - 1]);
+      if (!a0 || !a1 || !b0 || !b1) continue;
+      const d = dist(b0, a1) + dist(b1, a0);
+      if (d > 1200 || (dist(a0, a1) < 300 && dist(b0, b1) < 300)) continue;    // 循環線冇對頭
+      if (r.bound[co] && x.bound[x.co[0]] === r.bound[co]) continue;
+      score += 10 + d / 100;
+    }
+    if (score < bestScore) { bestScore = score; best = [k, x]; }
+  }
+  return best;
+}
+
 /* ---------- 路線詳情 ---------- */
 export function openRoute(key, focusStop){
   const r = S.DB.routeList[key]; if (!r) return;
@@ -73,14 +96,14 @@ export function openRoute(key, focusStop){
   if (sel < 0 && S.here) { let best = 1500; stops.forEach((id, i) => { const d = dist(S.here, stopLoc(id) || S.here); if (d < best && i < stops.length - 1) { best = d; sel = i; } }); }
   let board = sel >= 0 ? sel : null, alight = null, etas = null, timer = null, map = null, line = null;
   const si = serviceInfo(r), mtr = co === 'mtr';
-  const opp = Object.entries(S.DB.routeList).find(([k, x]) => k !== key && x.route === r.route && x.co[0] === r.co[0] && x.orig.zh === r.dest.zh && x.dest.zh === r.orig.zh);
+  const opp = findOpposite(key, r, co);
   const pg = openPage('route-page');
   pg.innerHTML = `<header class="pg-h"><button class="icon-btn" data-back type="button" aria-label="${L('返回', 'Back')}">${icon.back}</button>
       ${mtr ? lineTiles(r.route) : routeTiles(r.route)}<div class="pg-t"><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${L('由 ', 'From ')}${esc(nm(r.orig))} · ${r.co.map(coName).join(' + ')}</small></div></header>
     <div class="wrap">
       <div class="facts">
         ${opp ? `<button class="chip" type="button" data-opp="${esc(opp[0])}">⇄ ${L('對頭線', 'Reverse')}</button>` : ''}
-        ${si ? `<span class="fact">${L('今日 ', 'Today ')}${si.first}–${si.last}</span>` : ''}
+        ${si ? `<span class="fact">${L('今日 ', 'Today ')}${si.first}–${si.overnight ? L('翌日 ', 'next day ') : ''}${si.last}</span>` : ''}
         ${si?.hw ? `<span class="fact">${L(`而家約 ${si.hw} 分鐘一班`, `Every ~${si.hw} min now`)}</span>` : ''}
         ${r.jt ? `<span class="fact">${L(`全程約 ${r.jt} 分鐘`, `~${r.jt} min end to end`)}</span>` : ''}
         ${String(r.serviceType) !== '1' ? `<span class="fact warn">${L('特別班次', 'Special service')}</span>` : ''}

@@ -95,6 +95,18 @@ export function go(tab){
 }
 
 /* ---------- 地點搜尋 ---------- */
+// 香港人常用叫法：code = 港鐵站；q = 用嚟查地址嘅全名
+const ALIAS = [
+  [['理大', 'polyu'], {q: '香港理工大學'}], [['港大', 'hku'], {code: 'HKU', zh: '香港大學站（港大）', en: 'HKU Station'}],
+  [['中大', 'cuhk'], {code: 'UNI', zh: '大學站（中大）', en: 'University Station (CUHK)'}], [['科大', 'hkust', 'ust'], {q: '香港科技大學'}],
+  [['城大', 'cityu'], {q: '香港城市大學'}], [['浸大', 'hkbu'], {q: '香港浸會大學'}], [['教大', 'eduhk'], {q: '香港教育大學'}],
+  [['嶺大', 'lingnan'], {q: '嶺南大學'}], [['都大', 'hkmu'], {q: '香港都會大學'}],
+  [['機場', '赤鱲角', 'airport'], {code: 'AIR', zh: '機場（客運大樓）', en: 'Airport (Terminal)'}],
+  [['迪士尼', 'disney'], {code: 'DIS', zh: '迪士尼（港鐵站）', en: 'Disneyland Resort'}], [['海洋公園', 'ocean park'], {code: 'OCP', zh: '海洋公園站', en: 'Ocean Park Station'}],
+  [['會展', 'hkcec'], {code: 'EXC', zh: '會展站', en: 'Exhibition Centre Station'}], [['啟德', 'kai tak'], {code: 'KAT', zh: '啟德站', en: 'Kai Tak Station'}],
+  [['ifc', '國金'], {q: '國際金融中心'}], [['時代廣場', 'times square'], {q: '時代廣場'}], [['海港城', 'harbour city'], {q: '海港城'}]
+];
+const aliasOf = q => { const k = q.trim().toLowerCase(); const a = ALIAS.find(([ks]) => ks.includes(k)); return a ? a[1] : null; };
 export function searchStops(q, limit = 8){
   q = q.trim().toLowerCase();
   if (!q || /^[\x00-\x7f]$/.test(q)) return [];
@@ -103,11 +115,13 @@ export function searchStops(q, limit = 8){
     if (!S.IDX.has(id)) continue;
     const zh = s.name.zh || '', en = (s.name.en || '').toLowerCase();
     if (!zh.toLowerCase().includes(q) && !en.includes(q)) continue;
-    if (!seen.has(zh)) seen.set(zh, {kind: 'stop', name: s.name, lat: s.location.lat, lng: s.location.lng, cos: new Set(), score: zh.startsWith(q) || en.startsWith(q) ? 0 : 1});
-    for (const e of S.IDX.get(id)) seen.get(zh).cos.add(e.co);
+    if (!seen.has(zh)) seen.set(zh, {kind: 'stop', name: s.name, lat: s.location.lat, lng: s.location.lng, cos: new Set(), rail: false,
+      score: zh === q || zh === q + '站' || en === q ? 0 : zh.startsWith(q) || en.startsWith(q) ? 1 : 2});
+    const x = seen.get(zh);
+    for (const e of S.IDX.get(id)) { x.cos.add(e.co); if (e.co === 'mtr' || e.co === 'lightRail') x.rail = true; }
     if (seen.size > 300) break;
   }
-  return [...seen.values()].sort((a, b) => a.score - b.score || a.name.zh.length - b.name.zh.length).slice(0, limit);
+  return [...seen.values()].sort((a, b) => (a.score - (a.rail ? 1.5 : 0)) - (b.score - (b.rail ? 1.5 : 0)) || a.name.zh.length - b.name.zh.length).slice(0, limit);
 }
 export async function searchPlaces(q){
   q = q.trim(); if (q.length < 2) return [];
@@ -127,10 +141,14 @@ export async function searchPlaces(q){
     return out;
   } catch { return []; }
 }
-// 搜尋框 + 建議清單；onPick({lat,lng,label})
+// 一個全域監聽：撳出面就收埋所有建議清單（唔會每個搜尋框加一個）
+document.addEventListener('click', e => {
+  for (const b of document.querySelectorAll('.results.on')) if (!b.parentElement.contains(e.target)) b.classList.remove('on');
+});
+// 搜尋框 + 建議清單；onPick({lat,lng,label,kind})
 export function attachPicker(input, box, onPick, opt = {}){
   let tq, seq = 0, list = [];
-  const draw = (stops, plc, loading) => {
+  const draw = (alias, stops, plc, loading) => {
     const extra = [];
     if (opt.here && S.here) extra.push({kind: 'here', name: {zh: '你嘅位置', en: 'Your location'}, lat: S.here.lat, lng: S.here.lng});
     if (opt.saved) {
@@ -139,22 +157,27 @@ export function attachPicker(input, box, onPick, opt = {}){
       for (const c of places.custom || []) extra.push({kind: 'saved', name: {zh: c.label, en: c.label}, ...c});
     }
     const q = input.value.trim();
-    list = [...(q ? [] : extra), ...plc, ...stops];
+    const savedHit = q ? extra.filter(x => x.kind === 'saved' && nm(x.name).toLowerCase().includes(q.toLowerCase())) : extra;
+    // 次序：常用叫法 → 港鐵／輕鐵站同名稱完全啱嘅車站 → 常用地點 → 地方（大廈）→ 其他車站
+    const top = stops.filter(x => x.rail || x.score === 0), rest = stops.filter(x => !(x.rail || x.score === 0));
+    list = [...alias, ...top, ...savedHit, ...plc.slice(0, opt.places ? 5 : 0), ...rest];
     if (!list.length && !loading) { box.innerHTML = q ? `<div class="empty">${L('搵唔到', 'No results')}</div>` : ''; box.classList.toggle('on', !!q); return; }
     box.innerHTML = list.map((x, i) => `<button type="button" role="option" data-i="${i}">
-      <span class="k k-${x.kind}">${x.kind === 'place' ? icon.pin : x.kind === 'here' ? icon.gps : x.kind === 'saved' ? icon.star(true) : icon.bus}</span>
+      <span class="k k-${x.kind}">${x.kind === 'place' ? icon.pin : x.kind === 'here' ? icon.gps : x.kind === 'saved' || x.kind === 'alias' ? icon.star(true) : icon.bus}</span>
       <span class="nm">${esc(nm(x.name))}${x.sub ? `<small>${esc(nm(x.sub))}</small>` : ''}</span>
       ${x.cos ? [...x.cos].slice(0, 2).map(coTag).join(' ') : ''}</button>`).join('') + (loading ? `<div class="empty">${L('搵緊地方…', 'Searching places…')}</div>` : '');
     box.classList.add('on');
   };
   input.addEventListener('input', () => {
     clearTimeout(tq);
-    const q = input.value, my = ++seq;
-    const stops = searchStops(q, opt.places ? 5 : 10);
-    draw(stops, [], !!opt.places && q.trim().length >= 2);
-    if (opt.places && q.trim().length >= 2) tq = setTimeout(async () => { const p = await searchPlaces(q); if (my === seq) draw(stops, p, false); }, 350);
+    const q = input.value, my = ++seq, al = aliasOf(q);
+    const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, ...S.DB.stopList[al.code].location}] : [];
+    const stops = searchStops(al?.q || q, 10);
+    const wantPlaces = opt.places && (al?.q || q).trim().length >= 2;
+    draw(alias, stops, [], wantPlaces);
+    if (wantPlaces) tq = setTimeout(async () => { const p = await searchPlaces(al?.q || q); if (my === seq) draw(alias, stops, p, false); }, 350);
   });
-  input.addEventListener('focus', () => { if (!input.value) draw([], [], false); });
+  input.addEventListener('focus', () => { if (!input.value) draw([], [], [], false); });
   input.addEventListener('keydown', e => { if (e.key === 'Escape') box.classList.remove('on'); if (e.key === 'Enter') box.querySelector('button')?.click(); });
   box.addEventListener('click', e => {
     const b = e.target.closest('button[data-i]'); if (!b) return;
@@ -162,5 +185,4 @@ export function attachPicker(input, box, onPick, opt = {}){
     box.classList.remove('on'); input.value = opt.keep ? nm(x.name) : ''; input.blur();
     onPick({lat: x.lat, lng: x.lng, label: nm(x.name), kind: x.kind});
   });
-  document.addEventListener('click', e => { if (!box.contains(e.target) && e.target !== input) box.classList.remove('on'); });
 }

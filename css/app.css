@@ -169,7 +169,7 @@ details.more[open]>summary::before{content:"－ "}
 .bigmap{height:min(58vh,460px);margin-top:10px;border:1px solid var(--line);background:#1a1a1a}
 .rmap{height:240px;margin:12px 0 4px;border:1px solid var(--line);background:#1a1a1a}
 .leaflet-container{background:#1a1a1a;font-family:var(--body)}
-.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.5)}
+.leaflet-tile-pane{filter:brightness(.62) contrast(1.08) saturate(.75)}
 .leaflet-control-attribution{background:rgba(17,17,17,.75)!important;color:#aaa!important;font-size:10px}
 .leaflet-control-attribution a{color:#ddd!important}
 .leaflet-bar a{background:#1f1f1f!important;color:#eee!important;border-color:#333!important}
@@ -294,6 +294,8 @@ details.more[open]>summary::before{content:"－ "}
 .tb{height:104px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:0;font:800 19px/1 var(--disp);letter-spacing:.02em}
 .tb.y{background:var(--yellow);color:var(--ink)}
 .tb.d{background:#1e1e1e;color:#e6e6e6;border:1px solid #3a3a3a}
+.trip-note{margin:18px 0 0;font-size:13px;color:var(--grey)}
+#moreStops{margin-top:4px}
 .trip-prog{display:flex;align-items:center;justify-content:center;gap:0;padding:16px 12px calc(18px + var(--sb));border-top:1px solid #262626;overflow-x:auto}
 .pg-s{display:flex;flex-direction:column;align-items:center;gap:4px;color:#666;flex:none}
 .pg-s small{font:600 12px/1 var(--disp)}

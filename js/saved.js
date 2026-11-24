@@ -1,12 +1,12 @@
 // 港途 · 常用：智能主頁、常用地點、收藏路線、設定
-import {S, $, esc, store, L, nm, mins, hhmm, flaps, routeTiles, lineTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, toast} from './core.js';
+import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, routeTiles, lineTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, toast} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPicker} from './ui.js';
 import {planTrip, toTrip, legChips, planTo} from './plan.js';
 import {openRoute} from './route.js';
 import {startTrip} from './trip.js';
 
-let smart = null, smartAt = 0, favEta = new Map(), favAt = 0;
+let smart = null, smartAt = 0, smartBusy = false, favEta = new Map(), favAt = 0;
 export function initSaved(){
   $('v-saved').innerHTML = `<div class="wrap"><div id="smart"></div>
     <h2 class="sec">${L('常用地點', 'Places')}</h2><div id="plc" class="plc"></div>
@@ -19,7 +19,7 @@ export function initSaved(){
   setInterval(() => { if (!$('v-saved').hidden && !document.hidden) draw(); }, 20000);
 }
 function target(){
-  const h = new Date(Date.now() + 288e5).getUTCHours(), wd = new Date(Date.now() + 288e5).getUTCDay();
+  const h = new Date(Date.now() + 288e5).getUTCHours(), wd = dayIdx();   // 公眾假期當星期日
   const near = p => S.here && p && dist(S.here, p) < 400;
   let t = null;
   if (places.work && wd >= 1 && wd <= 5 && h >= 5 && h < 12 && !near(places.work)) t = {...places.work, label: L('學校／公司', 'School / Work'), icon: 'work'};
@@ -32,11 +32,12 @@ async function draw(force){
   const t = target(), sm = $('smart');
   if (!t) sm.innerHTML = `<div class="smart empty"><p class="lbl">${L('智能主頁', 'Smart home')}</p><h2>${L('設定屋企同學校／公司', 'Set Home and School / Work')}</h2><p>${L('設定之後，呢度會按時間自動話你知幾時出門：朝早去學校／返工，夜晚返屋企。', 'Then this card tells you when to leave — to work in the morning, home in the evening.')}</p></div>`;
   else if (!S.here) sm.innerHTML = `<div class="smart empty"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p><h2>${L('需要你嘅位置', 'Needs your location')}</h2><p>${L('喺「附近」頁撳定位，或者揀一個地點。', 'Locate yourself on the Nearby tab first.')}</p></div>`;
-  else if (force || !smart || Date.now() - smartAt > 60000 || smart.t.label !== t.label) {
+  else if (!smartBusy && (!smart || Date.now() - smartAt > 180000 || smart.t.label !== t.label || (force && Date.now() - smartAt > 30000))) {
     if (!smart || smart.t.label !== t.label) sm.innerHTML = `<div class="smart"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p><p class="loading">${L('計緊最快路線…', 'Finding the fastest trip…')}</p></div>`;
-    smartAt = Date.now();
+    smartAt = Date.now(); smartBusy = true;
     const from = {lat: S.here.lat, lng: S.here.lng, label: S.here.label};
     const opts = await planTrip(from, t, 3).catch(() => []);
+    smartBusy = false;
     smart = {t, o: opts.find(o => o.legs.length) || opts[0], from};
   }
   if (smart && t && S.here && smart.t.label === t.label) {

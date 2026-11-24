@@ -20,6 +20,12 @@ function shell(){
   document.documentElement.lang = S.set.lang === 'en' ? 'en' : 'zh-HK';
   document.title = L('港途 · 香港交通到站', 'HK GO · Hong Kong transit');
   $('brandSub').textContent = L('香港交通到站', 'HK transit');
+  $('foot').innerHTML = L('到站時間來自運輸署 DATA.GOV.HK 及各營辦商開放數據，只供參考。路線整合：<a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>；地圖及地址：地政總署、政府地址查詢服務。電車同紅色小巴暫時冇開放實時數據。',
+    'Arrival times from the Transport Department (DATA.GOV.HK) and operators’ open data, for reference only. Route data: <a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>; maps and addresses: Lands Department and the Address Lookup Service. Trams and red minibuses have no open real-time data.');
+  $('tabs').setAttribute('aria-label', L('主選單', 'Main menu'));
+  $('trip').setAttribute('aria-label', L('出門倒數', 'Leave countdown'));
+  $('clock').setAttribute('aria-label', L('現在時間', 'Current time'));
+  if ($('bootH')) { $('bootH').textContent = L('正在準備全港路線資料', 'Preparing Hong Kong route data'); $('loadTxt').textContent = L('第一次開要下載約 8 MB，之後每日自動更新一次。', 'First launch downloads about 8 MB; it refreshes once a day.'); }
   $('langBtn').textContent = S.set.lang === 'en' ? '中' : 'EN';
   $('langBtn').setAttribute('aria-label', L('Switch to English', '轉做中文'));
   $('tabs').innerHTML = TABS.map(([k, zh, en, svg]) => `<button type="button" data-tab="${k}"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${svg}</svg><span>${L(zh, en)}</span></button>`).join('');
