@@ -1,13 +1,13 @@
 // 港途 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
 import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, rideMin, cumTimes, avgWait, runningNow, fareAt, money, stopLoc, stopName,
-  hhmm, mins, now, routeTiles, lineTiles, coName, lineName, icon} from './core.js';
+  hhmm, mins, now, nextDepartures, routeTiles, lineTiles, coName, lineName, icon} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {attachPicker, go, on} from './ui.js';
 import {startTrip} from './trip.js';
 
-const R_END = 600, R_XFER = 180, MAX_RIDES = 4;
+const R_END = 600, R_XFER = 320, MAX_RIDES = 4;
 const xferCache = new Map();
-const xferStops = id => { if (!xferCache.has(id)) { const p = stopLoc(id); xferCache.set(id, p ? stopsWithin(p, R_XFER).filter(x => S.IDX.has(x.id)).slice(0, 12) : []); } return xferCache.get(id); };
+const xferStops = id => { if (!xferCache.has(id)) { const p = stopLoc(id); xferCache.set(id, p ? stopsWithin(p, R_XFER).filter(x => S.IDX.has(x.id)).slice(0, 16) : []); } return xferCache.get(id); };
 const rt = key => S.DB.routeList[key];
 const sigOf = legs => legs.map(l => rt(l.key).route).join('>');
 
@@ -120,8 +120,12 @@ async function refine(o, memo){
     let boardT, live = false;
     if (c) { boardT = c.t; live = !c.sched; }
     else {
-      if (!res.list.length && !res.err && (!runningNow(r) || res.note)) o.dead = true;
-      boardT = t + avgWait(r, l.co) * 60000; o.unsure = true;
+      // 冇實時班次：用時間表搵下一班（例如凌晨就用首班車），搵唔到先當今日冇車
+      const tt = nextDepartures(r, l.co, l.bseq, 8).find(x => x >= t - 30000);
+      if (tt) boardT = tt;
+      else if (runningNow(r) && !(res.note && !res.err && !res.list.length)) boardT = t + avgWait(r, l.co) * 60000;
+      else { o.dead = true; boardT = t + avgWait(r, l.co) * 60000; }
+      o.unsure = true;
     }
     const ride = rideMin(r, l.co, l.bseq, l.aseq) * 60000;
     o.times.push({boardT, live, alightT: boardT + ride});
