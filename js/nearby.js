@@ -10,7 +10,7 @@ import {startTrip} from './trip.js';
 const RADII = ['auto', 30, 100, 300, 500];
 const MAX_GROUPS = 14;
 const PRESETS = [['HUH', '紅磡', 'Hung Hom'], ['MOK', '旺角', 'Mong Kok'], ['CEN', '中環', 'Central'], ['CAB', '銅鑼灣', 'Causeway Bay'], ['SHT', '沙田', 'Sha Tin'], ['TUM', '屯門', 'Tuen Mun'], ['TUC', '東涌', 'Tung Chung']];
-let groups = [], effR = 30, note = '', lastFetch = 0, cyc = 0, mode = store.get('nearMode', 'list'), map = null, rowsById = new Map();
+let lastView = '', groups = [], effR = 30, note = '', lastFetch = 0, cyc = 0, mode = store.get('nearMode', 'list'), map = null, rowsById = new Map();
 
 export function initNearby(){
   const v = $('v-near');
@@ -223,7 +223,10 @@ export function render(){
 async function drawMap(){
   const el = $('nmap');
   try {
-    if (!map || !el._map) map = await makeMap(el, S.here, effR > 100 ? 16 : 17);
+    if (!map || !el._map) { map = await makeMap(el, S.here, 17); lastView = ''; }
+    map.invalidateSize();
+    const vk = S.here.lat.toFixed(5) + S.here.lng.toFixed(5) + effR;
+    if (vk !== lastView) { lastView = vk; map.setView([S.here.lat, S.here.lng], effR <= 100 ? 18 : effR <= 300 ? 17 : 16); }
     const Lf = window.L;
     map.eachLayer(l => { if (l._hk) map.removeLayer(l); });
     const add = l => { l._hk = 1; l.addTo(map); return l; };
@@ -233,7 +236,6 @@ async function drawMap(){
       mode = 'list'; store.set('nearMode', mode); paintCtrl(); render();
       setTimeout(() => document.getElementById('g' + i)?.scrollIntoView({behavior: 'smooth', block: 'start'}), 50);
     })));
-    map.setView([S.here.lat, S.here.lng], map.getZoom());
   } catch { el.innerHTML = `<p class="loading">${L('地圖載入唔到（可能冇網絡）', 'Map unavailable (offline?)')}</p>`; }
 }
 
