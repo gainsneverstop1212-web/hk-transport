@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="港途">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<title>港途 · 附近到站</title>
+<style>
+/* VOICE  香港交通到站板：清楚、即時、唔講廢話
+   IDEA   機場同車站嘅 split-flap 到站板 + 黃色指示牌（用家自己嘅 Departure Board 設計系統）
+   PICTURE 每個車站係一塊到站板，分鐘數用翻牌字粒顯示
+   COLOUR ink-black 底、signal-yellow 指示牌、paper-white 字、delay-red 只用喺趕唔切
+   TYPE   Barlow Condensed（標題同字粒）+ Barlow / Noto Sans TC（內文）
+   LAYOUT 手機優先單欄，最闊 760px；頂部黃色指示牌 sticky */
+:root{
+  color-scheme:dark;
+  --yellow:#ffc917;--ink:#111111;--panel:#2a2a2a;--flap:#1f1f1f;--white:#ffffff;
+  --grey:#8b8b8b;--red:#ff5a4e;--line:#333;
+  --disp:"Barlow Condensed","Noto Sans TC","Arial Narrow",sans-serif;
+  --body:Barlow,"Noto Sans TC","Helvetica Neue",Arial,sans-serif;
+  --safe-t:env(safe-area-inset-top,0px);--safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;min-width:0}
+html{-webkit-text-size-adjust:100%;scroll-padding-top:120px}
+body{margin:0;background:var(--ink);color:var(--white);font:16px/1.5 var(--body);overflow-x:clip;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:2px}
+.wrap{max-width:760px;margin:0 auto;padding:0 max(16px,env(safe-area-inset-left,0px))}
+
+/* 黃色指示牌 */
+.sign{position:sticky;top:0;z-index:20;background:var(--yellow);color:var(--ink);padding-top:var(--safe-t)}
+.sign .wrap{display:flex;align-items:center;gap:12px;min-height:56px}
+.brand{display:flex;align-items:center;gap:10px;font:800 26px/1 var(--disp);letter-spacing:.01em;margin:0}
+.brand svg{flex:none}
+.brand small{font:700 15px/1 var(--disp);letter-spacing:.06em;opacity:.75}
+.clock{margin-left:auto;display:flex;gap:3px}
+.clock .f{background:var(--ink);color:var(--yellow);font:700 20px/1 var(--disp);width:22px;height:30px;display:grid;place-items:center;border-radius:3px}
+.clock .sep{font:800 20px/30px var(--disp);width:6px;text-align:center}
+
+/* 位置面板 */
+.where{background:#171717;border-bottom:1px solid var(--line)}
+.where .wrap{padding-block:14px 12px;display:grid;gap:12px}
+.loc{display:flex;align-items:center;gap:12px}
+.loc-txt{flex:1}
+.loc-lbl{font:600 12px/1.2 var(--disp);letter-spacing:.12em;color:var(--grey)}
+.loc-name{font:700 22px/1.15 var(--disp);margin:2px 0 0;overflow-wrap:anywhere}
+.loc-sub{font-size:13px;color:var(--grey);margin:2px 0 0}
+.gps{flex:none;display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:0;border-radius:0;background:var(--yellow);color:var(--ink);font:700 16px/1 var(--disp);letter-spacing:.02em}
+.gps[aria-busy=true] svg{animation:spin 1.2s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.search{position:relative}
+.search input{width:100%;height:46px;border:1px solid #3a3a3a;background:var(--flap);border-radius:0;padding:0 14px 0 42px;font-size:16px}
+.search input::placeholder{color:#8b8b8b}
+.search svg{position:absolute;left:13px;top:13px;pointer-events:none}
+.results{position:absolute;left:0;right:0;top:48px;background:#1b1b1b;border:1px solid #3a3a3a;z-index:30;max-height:60vh;overflow:auto;display:none}
+.results.on{display:block}
+.results button{display:flex;width:100%;align-items:center;gap:10px;min-height:48px;padding:8px 14px;border:0;border-bottom:1px solid #2a2a2a;background:none;text-align:left}
+.results button:hover,.results button:focus-visible{background:#262626}
+.results .nm{flex:1;font-weight:500}
+.results .empty{padding:14px;color:var(--grey);font-size:14px}
+.chips{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;height:40px;padding:0 14px;border:1px solid #3a3a3a;background:transparent;font:600 16px/1 var(--disp);letter-spacing:.02em;color:#e6e6e6}
+.chip[aria-pressed=true]{background:var(--white);color:var(--ink);border-color:var(--white)}
+.radius{display:flex;align-items:center;gap:8px}
+.radius .loc-lbl{margin-right:4px}
+.seg{display:flex;border:1px solid #3a3a3a}
+.seg button{height:38px;min-width:58px;padding:0 10px;border:0;background:transparent;font:600 15px/1 var(--disp);color:#ddd}
+.seg button+button{border-left:1px solid #3a3a3a}
+.seg button[aria-pressed=true]{background:var(--yellow);color:var(--ink)}
+
+/* 狀態 */
+.status{padding:14px 0 4px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
+.status b{font:700 18px/1.2 var(--disp)}
+.status span{font-size:13px;color:var(--grey)}
+.notice{margin:10px 0 0;padding:10px 14px;background:#2b2412;border-left:0;color:#ffe08a;font-size:14px}
+.notice.red{background:#2d1514;color:#ffb3ad}
+
+/* 到站板 */
+.board{display:grid;gap:18px;padding:12px 0 28px}
+.stop{background:#161616;border:1px solid #2c2c2c}
+.stop-h{display:flex;gap:12px;align-items:flex-start;padding:14px 14px 10px;border-bottom:1px solid #2c2c2c}
+.stop-h h2{margin:0;font:700 22px/1.15 var(--disp);overflow-wrap:anywhere;text-wrap:balance}
+.stop-h p{margin:3px 0 0;font-size:13px;color:var(--grey)}
+.stop-h p b{color:var(--yellow);font-weight:600}
+.dist{margin-left:auto;flex:none;text-align:right}
+.dist strong{display:block;font:800 26px/1 var(--disp);color:var(--yellow)}
+.dist span{font:600 12px/1.2 var(--disp);letter-spacing:.12em;color:var(--grey)}
+.cols,.row{display:grid;grid-template-columns:76px minmax(0,1fr) 92px 44px;align-items:center;column-gap:10px}
+.cols{padding:8px 14px 6px;font:600 12px/1.2 var(--disp);letter-spacing:.12em;color:var(--grey)}
+.cols span:nth-child(3){text-align:right}
+.row{padding:10px 14px;border-top:1px solid #232323;min-height:64px}
+.row.fav{background:#1d1a10}
+.rt{display:flex;gap:2px;flex-wrap:nowrap}
+.rt.s4 .f{min-width:15px;font-size:17px;padding:0 1px}
+.rt.s5 .f{min-width:12px;font-size:15px;padding:0}
+.f{display:inline-grid;place-items:center;min-width:19px;height:30px;padding:0 2px;background:var(--flap);color:var(--white);font:700 21px/1 var(--disp);border-radius:3px;position:relative;overflow:hidden;box-shadow:inset 0 -1px 0 #000}
+.f::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:rgba(0,0,0,.65)}
+.rt.ln .f{background:var(--c);color:#fff;font-size:17px;min-width:21px}
+.rt.ln.dark .f{color:#111}
+.dst{line-height:1.3}
+.dst b{display:block;font-weight:600;font-size:16px;overflow-wrap:anywhere}
+.dst small{display:block;font-size:13px;color:var(--grey);margin-top:2px}
+.dst .adv{display:block;font-size:13px;margin-top:1px}
+.dst .go{color:var(--yellow)}
+.dst .late{color:var(--red)}
+.co{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.co i{width:8px;height:8px;background:var(--c);display:inline-block}
+.eta{text-align:right;justify-self:end}
+.eta .big{display:flex;gap:2px;justify-content:flex-end;align-items:flex-end}
+.eta .big .f{color:var(--yellow);font-size:24px;height:34px;min-width:22px}
+.eta .big .u{font:600 13px/1 var(--disp);color:var(--grey);margin-left:3px;padding-bottom:3px}
+.eta .big.now .f{background:var(--yellow);color:var(--ink);font-size:19px}
+.eta small{display:block;font-size:13px;color:var(--grey);margin-top:4px;white-space:nowrap}
+.eta .none{font:600 15px/1.2 var(--disp);color:var(--grey);white-space:nowrap}
+.star{width:44px;height:44px;border:0;background:none;display:grid;place-items:center;color:#5a5a5a}
+.star[aria-pressed=true]{color:var(--yellow)}
+.flip{animation:flip .45s ease-out}
+@keyframes flip{0%{transform:rotateX(90deg);filter:brightness(1.8)}100%{transform:none;filter:none}}
+details.more{border-top:1px solid #232323}
+details.more summary{list-style:none;cursor:pointer;padding:12px 14px;font-size:14px;color:var(--grey);min-height:44px}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::before{content:"＋ "}
+details.more[open] summary::before{content:"－ "}
+.loading{padding:14px;color:var(--grey);font-size:14px}
+.skel{height:64px;border-top:1px solid #232323;background:linear-gradient(90deg,#161616 0,#1e1e1e 40%,#161616 80%);background-size:300% 100%;animation:sh 1.4s infinite linear}
+@keyframes sh{to{background-position:-300% 0}}
+
+/* 開機 / 空白 */
+.hero{padding:40px 0 20px;text-align:left}
+.hero h1{font:800 44px/1 var(--disp);margin:0 0 10px;text-wrap:balance}
+.hero p{color:#cfcfcf;max-width:34em;margin:0 0 6px}
+.bigflap{display:flex;gap:4px;margin:18px 0}
+.bigflap .f{font-size:32px;height:46px;min-width:32px;color:var(--yellow)}
+
+footer{border-top:1px solid #2a2a2a;color:var(--grey);font-size:12px;line-height:1.5;padding:18px 0 calc(24px + var(--safe-b))}
+footer a{color:#cfcfcf}
+
+@media(max-width:420px){
+  .cols,.row{grid-template-columns:64px minmax(0,1fr) 78px 40px;column-gap:8px}
+  .row{padding:10px 10px}.cols{padding-inline:10px}
+  .f{min-width:16px;font-size:19px;height:28px}
+  .eta .big .f{font-size:21px;min-width:19px;height:31px}
+  .star{width:40px}
+  .brand small{display:none}
+}
+@media(prefers-reduced-motion:reduce){.flip,.skel,.gps[aria-busy=true] svg{animation:none}}
+</style>
+</head>
+<body>
+<header class="sign">
+  <div class="wrap">
+    <p class="brand">
+      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="4" fill="#111"/><path d="M8 15h12m-5-6 6 6-6 6" stroke="#ffc917" stroke-width="3.2" fill="none" stroke-linecap="square"/></svg>
+      港途 <small>附近到站</small>
+    </p>
+    <div class="clock" id="clock" aria-label="現在時間"></div>
+  </div>
+</header>
+
+<section class="where" aria-label="位置">
+  <div class="wrap">
+    <div class="loc">
+      <div class="loc-txt">
+        <div class="loc-lbl">你而家喺</div>
+        <p class="loc-name" id="locName">未定位</p>
+        <p class="loc-sub" id="locSub">撳「定位」用你嘅位置，或者揀一個地點</p>
+      </div>
+      <button class="gps" id="gpsBtn" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.4" fill="none"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2.4"/></svg>
+        定位
+      </button>
+    </div>
+    <div class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5" stroke="#8b8b8b" stroke-width="2.4" fill="none"/><path d="m15 15 6 6" stroke="#8b8b8b" stroke-width="2.4"/></svg>
+      <input id="q" type="search" placeholder="搜尋車站，例如：理工大學、旺角站" autocomplete="off" enterkeyhint="search" aria-label="搜尋車站">
+      <div class="results" id="results" role="listbox"></div>
+    </div>
+    <div class="chips" id="chips" aria-label="常用地點"></div>
+    <div class="radius">
+      <span class="loc-lbl">範圍</span>
+      <div class="seg" id="seg" role="group" aria-label="搜尋範圍"></div>
+    </div>
+  </div>
+</section>
+
+<main class="wrap">
+  <div id="status"></div>
+  <div id="board" class="board">
+    <div class="hero">
+      <div class="bigflap" aria-hidden="true"><span class="f">載</span><span class="f">入</span><span class="f">中</span></div>
+      <h1>正在準備全港路線資料</h1>
+      <p>第一次開會下載約 3,700 條路線同 15,000 個車站，之後每日自動更新一次。</p>
+    </div>
+  </div>
+  <footer>
+    到站時間來自運輸署 DATA.GOV.HK 及各營辦商開放數據（九巴、龍運、城巴、新大嶼山巴士、綠色專線小巴、港鐵、輕鐵、港鐵巴士），只供參考。路線及車站整合數據：<a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>。紅色小巴冇開放數據；渡輪暫時只顯示路線。
+  </footer>
+</main>
+
+<script>
+{
+const DATA_URL = 'https://data.hkbus.app/routeFareList.min.json';
+const RADII = [30, 100, 300, 500];
+const MAX_GROUPS = 12;  // 鐵路站唔計入上限
+const REFRESH_MS = 30000;
+const HK = {s:22.13, n:22.58, w:113.82, e:114.45};
+const CO = {
+  kmb:{n:'九巴',c:'#e4002b'}, ctb:{n:'城巴',c:'#ffd400'}, nlb:{n:'嶼巴',c:'#38b6c9'},
+  gmb:{n:'專線小巴',c:'#00a651'}, lrtfeeder:{n:'港鐵巴士',c:'#f0812d'}, mtr:{n:'港鐵',c:'#e2231a'},
+  lightRail:{n:'輕鐵',c:'#d3a809'}, sunferry:{n:'新渡輪',c:'#4aa3df'}, fortuneferry:{n:'富裕小輪',c:'#4aa3df'}, hkkf:{n:'港九小輪',c:'#4aa3df'}
+};
+const LINES = {
+  AEL:['機場快綫','#00888a'], TCL:['東涌綫','#f7943e'], TML:['屯馬綫','#923011'], TKL:['將軍澳綫','#7d499d'],
+  EAL:['東鐵綫','#53b7e8'], SIL:['南港島綫','#bac429'], TWL:['荃灣綫','#e2231a'], ISL:['港島綫','#0071ce'],
+  KTL:['觀塘綫','#00ab4e'], DRL:['迪士尼綫','#f173ac']
+};
+const PRESETS = [['HUH','紅磡'],['MOK','旺角'],['CEN','中環'],['CAB','銅鑼灣'],['SHT','沙田'],['TUM','屯門'],['TUC','東涌']];
+const FERRY = new Set(['sunferry','fortuneferry','hkkf']);
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('hkgo:'+k); return v == null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem('hkgo:'+k, JSON.stringify(v)); }catch{} }
+};
+
+let DB = null, IDX = new Map(), GRID = new Map();
+let here = null;            // {lat,lng,acc,label,mode}
+let radius = store.get('radius', 30);
+let effRadius = radius;
+let groups = [];
+let favs = new Set(store.get('favs', []));
+let lastFetch = 0, timer = null, watchId = null, cycle = 0;
+const prevFlap = new Map();
+
+/* ---------- 時鐘 ---------- */
+function tick(){
+  const d = new Date(), hm = d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'Asia/Hong_Kong'});
+  $('clock').innerHTML = hm.split('').map(c => c === ':' ? '<span class="sep">:</span>' : `<span class="f">${c}</span>`).join('');
+}
+
+/* ---------- 數據載入 ---------- */
+async function loadDb(){
+  let cache = null, cached = null;
+  try{ cache = await caches.open('hkgo-data-v1'); cached = await cache.match(DATA_URL); }catch{}
+  const age = Date.now() - store.get('dbTime', 0);
+  if (cached && age < 864e5) { try{ return await cached.clone().json(); }catch{} }
+  try{
+    const res = await fetch(DATA_URL, {cache:'no-store'});
+    if (!res.ok) throw new Error(res.status);
+    if (cache) { try{ await cache.put(DATA_URL, res.clone()); store.set('dbTime', Date.now()); }catch{} }
+    return await res.json();
+  }catch(e){
+    if (cached) return cached.json();
+    throw e;
+  }
+}
+const cell = (lat, lng) => Math.floor(lat/0.002) + ':' + Math.floor(lng/0.002);
+function buildIndex(){
+  for (const [key, r] of Object.entries(DB.routeList)) {
+    for (const co of r.co) {
+      const list = r.stops[co] || [];
+      list.forEach((id, seq) => {
+        if (!IDX.has(id)) IDX.set(id, []);
+        IDX.get(id).push({key, co, seq});
+      });
+    }
+  }
+  for (const [id, s] of Object.entries(DB.stopList)) {
+    if (!IDX.has(id) || !s.location) continue;
+    const k = cell(s.location.lat, s.location.lng);
+    if (!GRID.has(k)) GRID.set(k, []);
+    GRID.get(k).push(id);
+  }
+}
+
+/* ---------- 距離 ---------- */
+function dist(a, b){
+  const R = 6371000, toR = Math.PI/180;
+  const x = (b.lng - a.lng) * toR * Math.cos((a.lat + b.lat) / 2 * toR), y = (b.lat - a.lat) * toR;
+  return Math.sqrt(x*x + y*y) * R;
+}
+const walkMin = m => Math.max(1, Math.ceil(m * 1.3 / 75));
+const inHK = p => p.lat > HK.s && p.lat < HK.n && p.lng > HK.w && p.lng < HK.e;
+
+function stopsWithin(p, r){
+  const out = [], span = Math.ceil(r / 200) + 1, cy = Math.floor(p.lat/0.002), cx = Math.floor(p.lng/0.002);
+  for (let i = -span; i <= span; i++) for (let j = -span; j <= span; j++) {
+    for (const id of GRID.get((cy+i)+':'+(cx+j)) || []) {
+      const d = dist(p, DB.stopList[id].location);
+      if (d <= r) out.push({id, d});
+    }
+  }
+  return out.sort((a, b) => a.d - b.d);
+}
+
+/* ---------- 車站分組 ---------- */
+function makeGroups(){
+  if (!here || !DB) return;
+  let near = [];
+  effRadius = radius;
+  for (const r of RADII.filter(x => x >= radius)) { near = stopsWithin(here, r); effRadius = r; if (near.length) break; }
+  const gs = [];
+  for (const s of near) {
+    const st = DB.stopList[s.id], nm = st.name.zh;
+    let g = gs.find(x => x.name === nm && dist(x.loc, st.location) < 80);
+    const rail = (IDX.get(s.id) || []).some(e => e.co === 'mtr' || e.co === 'lightRail');
+    if (!g) { if (gs.length >= MAX_GROUPS && !rail) continue; g = {name:nm, loc:st.location, d:s.d, stops:[], rows:new Map(), dyn:[], loaded:false}; gs.push(g); }
+    g.stops.push(s.id);
+  }
+  for (const g of gs) {
+    g.walk = walkMin(g.d);
+    g.cos = new Set();
+    for (const id of g.stops) for (const e of IDX.get(id) || []) {
+      const r = DB.routeList[e.key]; g.cos.add(e.co);
+      if (e.co === 'mtr' || e.co === 'lightRail') continue;
+      if (e.seq === r.stops[e.co].length - 1) continue;           // 總站落車，唔可以上車
+      let row = g.rows.get(e.key);
+      if (!row) { row = {key:e.key, co:e.co, cos:new Set(), route:r.route, dest:r.dest.zh, etas:[], note:'', srcs:[]}; g.rows.set(e.key, row); }
+      row.cos.add(e.co);
+      if (!row.srcs.some(x => x.co === e.co && x.stop === id)) row.srcs.push({co:e.co, stop:id, seq:e.seq, r});
+    }
+  }
+  groups = gs;
+  render();
+  refresh(true);
+}
+
+/* ---------- 實時到站 ---------- */
+let active = 0; const queue = [];
+function J(url, opt){
+  return new Promise((res, rej) => {
+    const run = () => { active++;
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 12000);
+      fetch(url, {cache:'no-store', signal:ctl.signal, ...opt})
+        .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(res, rej)
+        .finally(() => { clearTimeout(to); active--; if (queue.length) queue.shift()(); });
+    };
+    active < 8 ? run() : queue.push(run);
+  });
+}
+const T = s => { if (!s) return null; const v = Date.parse(/T/.test(s) ? s : String(s).replace(/\//g,'-').replace(' ', 'T') + '+08:00'); return isNaN(v) ? null : v; };
+const add = (row, t, rmk='') => { if (t != null) row.etas.push({t, rmk}); else if (rmk && !row.note) row.note = rmk; };
+
+async function loadGroup(g, memo){
+  const once = (k, f) => { if (!memo.has(k)) memo.set(k, f().catch(e => ({__err:e}))); return memo.get(k); };
+  const jobs = [];
+  for (const row of g.rows.values()) { row.etas = []; row.note = ''; row.err = false; }
+  const fail = row => { row.err = true; };
+
+  for (const row of g.rows.values()) for (const s of row.srcs) {
+    const {co, stop, seq, r} = s, bound = (r.bound[co] || '');
+    if (co === 'kmb') jobs.push(once('kmb'+stop, () => J(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stop}`)).then(d => {
+      if (d.__err) return fail(row);
+      for (const e of d.data || []) if (e.route === r.route && bound.includes(e.dir) && String(e.service_type) === String(r.serviceType))
+        add(row, T(e.eta), e.rmk_tc);
+    }));
+    else if (co === 'ctb') jobs.push(once(`ctb${stop}/${r.route}`, () => J(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${stop}/${encodeURIComponent(r.route)}`)).then(d => {
+      if (d.__err) return fail(row);
+      for (const e of d.data || []) if (bound.includes(e.dir)) add(row, T(e.eta), e.rmk_tc);
+    }));
+    else if (co === 'gmb') jobs.push(once('gmb'+stop, () => J(`https://data.etagmb.gov.hk/eta/stop/${stop}`)).then(d => {
+      if (d.__err) return fail(row);
+      const rs = bound === 'I' ? 2 : 1;
+      for (const e of d.data || []) if (String(e.route_id) === String(r.gtfsId) && e.route_seq === rs && e.stop_seq === seq + 1) {
+        if (!e.enabled) { row.note = e.description_tc || '暫停服務'; continue; }
+        for (const x of e.eta || []) add(row, T(x.timestamp), x.remarks_tc || '');
+      }
+    }));
+    else if (co === 'nlb') jobs.push(once(`nlb${r.nlbId}/${stop}`, () => J(`https://rt.data.gov.hk/v2/transport/nlb/stop.php?action=estimatedArrivals&routeId=${r.nlbId}&stopId=${stop}&language=zh`)).then(d => {
+      if (d.__err) return fail(row);
+      for (const e of d.estimatedArrivals || []) add(row, T(e.estimatedArrivalTime), e.departed === '1' ? '已開出' : '');
+      if (!(d.estimatedArrivals || []).length && d.message) row.note = d.message;
+    }));
+    else if (co === 'lrtfeeder') jobs.push(once('mb'+r.route, () => J('https://rt.data.gov.hk/v1/transport/mtr/bus/getSchedule', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({language:'zh', routeName:r.route})})).then(d => {
+      if (d.__err) return fail(row);
+      const b = (d.busStop || []).find(x => x.busStopId === stop);
+      for (const x of (b && b.bus) || []) {
+        const sec = Number(x.arrivalTimeInSecond) > 0 ? Number(x.arrivalTimeInSecond) : Number(x.departureTimeInSecond);
+        if (isFinite(sec)) add(row, Date.now() + sec * 1000, x.busRemark || '');
+      }
+      if (!b && d.routeStatusRemarkTitle) row.note = d.routeStatusRemarkTitle;
+    }));
+    else if (FERRY.has(co)) row.note = '渡輪暫未有實時資料';
+  }
+
+  // 港鐵 + 輕鐵：由 API 直接生成每個方向
+  const dyn = [];
+  for (const id of g.stops) {
+    const lines = new Set((IDX.get(id) || []).filter(e => e.co === 'mtr').map(e => DB.routeList[e.key].route));
+    for (const ln of lines) jobs.push(once(`mtr${ln}${id}`, () => J(`https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php?line=${ln}&sta=${id}&lang=TC`)).then(d => {
+      const info = LINES[ln] || [ln, '#e2231a'];
+      if (d.__err || !d.data) { dyn.push({kind:'mtr', key:`mtr:${ln}:${id}`, line:ln, info, dest:info[0], etas:[], note:'暫時攞唔到資料', err:true}); return; }
+      const v = d.data[`${ln}-${id}`] || {};
+      let any = false;
+      for (const dir of ['UP', 'DOWN']) {
+        const byDest = new Map();
+        for (const e of v[dir] || []) {
+          if (!byDest.has(e.dest)) byDest.set(e.dest, {kind:'mtr', key:`mtr:${ln}:${id}:${dir}:${e.dest}`, line:ln, info, dest:(DB.stopList[e.dest]?.name.zh) || e.dest, plat:e.plat, etas:[], note:''});
+          byDest.get(e.dest).etas.push({t:T(e.time), rmk:''});
+        }
+        for (const x of byDest.values()) { dyn.push(x); any = true; }
+      }
+      if (!any) dyn.push({kind:'mtr', key:`mtr:${ln}:${id}`, line:ln, info, dest:info[0], etas:[], note: d.isdelay === 'Y' ? '列車服務延誤' : '暫無班次'});
+    }));
+    if ((IDX.get(id) || []).some(e => e.co === 'lightRail')) jobs.push(once('lrt'+id, () => J(`https://rt.data.gov.hk/v1/transport/mtr/lrt/getSchedule?station_id=${parseInt(id.slice(2), 10)}`)).then(d => {
+      if (d.__err) { dyn.push({kind:'lrt', key:'lrt:'+id, route:'輕鐵', dest:'輕鐵', etas:[], note:'暫時攞唔到資料', err:true}); return; }
+      const pl = d.platform_list || [];
+      if (!pl.length || pl.every(p => p.end_service_status)) { dyn.push({kind:'lrt', key:'lrt:'+id, route:'輕鐵', dest:'輕鐵', etas:[], note:'今日服務已結束'}); return; }
+      const m = new Map();
+      for (const p of pl) for (const e of p.route_list || []) {
+        if (e.stop && e.stop !== 0) continue;
+        const k = `lrt:${id}:${e.route_no}:${e.dest_ch}`;
+        if (!m.has(k)) m.set(k, {kind:'lrt', key:k, route:e.route_no, dest:e.dest_ch, plat:p.platform_id, etas:[], note:''});
+        const te = String(e.time_en || '');
+        const mins = /arriv|depart|^-$/i.test(te) ? 0 : parseInt(te, 10);
+        if (isFinite(mins)) m.get(k).etas.push({t:Date.now() + mins * 60000, rmk: e.train_length ? `${e.train_length} 卡` : ''});
+      }
+      dyn.push(...m.values());
+    }));
+  }
+  await Promise.allSettled(jobs);
+  for (const row of g.rows.values()) {
+    row.etas.sort((a, b) => a.t - b.t);
+    row.etas = row.etas.filter((e, i, a) => !i || e.t - a[i-1].t > 45000);
+    if (row.err && !row.etas.length) row.note = '暫時攞唔到資料';
+  }
+  for (const x of dyn) x.etas.sort((a, b) => a.t - b.t);
+  g.dyn = dyn; g.loaded = true;
+}
+
+async function refresh(force){
+  if (!groups.length || document.hidden) return;
+  if (!force && Date.now() - lastFetch < REFRESH_MS - 1000) return;
+  lastFetch = Date.now();
+  const my = ++cycle, memo = new Map();
+  await Promise.all(groups.map(g => loadGroup(g, memo).then(() => { if (my === cycle) render(); })));
+}
+
+/* ---------- 顯示 ---------- */
+const mins = t => Math.round((t - Date.now()) / 60000);
+function flaps(text, key){
+  const changed = prevFlap.has(key) && prevFlap.get(key) !== text;
+  prevFlap.set(key, text);
+  return [...text].map(c => `<span class="f${changed ? ' flip' : ''}">${esc(c)}</span>`).join('');
+}
+function etaCell(row, key){
+  const list = row.etas.filter(e => mins(e.t) >= 0);
+  if (!list.length) return `<span class="none">${esc(row.note || '暫無班次')}</span>`;
+  const m = mins(list[0].t);
+  const big = m <= 0 ? `<div class="big now">${flaps('即將', key)}</div>` : `<div class="big">${flaps(String(m).padStart(2, '0'), key)}<span class="u">分</span></div>`;
+  const rest = list.slice(1, 3).map(e => mins(e.t)).map(x => x <= 0 ? '即將' : x).join(' · ');
+  return big + (rest ? `<small>之後 ${rest} 分</small>` : list[0].rmk ? `<small>${esc(list[0].rmk)}</small>` : '');
+}
+function advice(row, walk){
+  const list = row.etas.filter(e => mins(e.t) >= 0);
+  if (!list.length) return '';
+  const ok = list.find(e => mins(e.t) >= walk);
+  if (!ok) return `<span class="adv late">步行 ${walk} 分鐘，趕唔切</span>`;
+  const left = mins(ok.t) - walk;
+  if (ok !== list[0]) return `<span class="adv go">下一班：${left <= 0 ? '而家出發' : left + ' 分鐘後出發'}</span>`;
+  return left <= 0 ? `<span class="adv go">而家出發</span>` : `<span class="adv go">${left} 分鐘後出發</span>`;
+}
+const coTag = co => `<span class="co"><i style="--c:${CO[co]?.c || '#888'}"></i>${esc(CO[co]?.n || co)}</span>`;
+function star(id, label){
+  const on = favs.has(id);
+  return `<button class="star" type="button" data-fav="${esc(id)}" aria-pressed="${on}" aria-label="${on ? '取消常用' : '加入常用'}：${esc(label)}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 6 6.5.7-4.9 4.4 1.4 6.4L12 17l-5.8 3.3 1.4-6.4-4.9-4.4 6.5-.7z" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>`;
+}
+const sz = r => { const n = [...String(r)].length; return n >= 5 ? ' s5' : n === 4 ? ' s4' : ''; };
+function rowHtml(g, row){
+  const fid = g.name + '|' + row.key, fk = fid;
+  let rt, sub;
+  if (row.kind === 'mtr') {
+    const short = row.info[0].replace(/綫$/, '');
+    rt = `<div class="rt ln${row.line === 'SIL' || row.line === 'EAL' ? ' dark' : ''}" style="--c:${row.info[1]}">${[...short].slice(0, 3).map(c => `<span class="f">${esc(c)}</span>`).join('')}</div>`;
+    sub = `<span class="co"><i style="--c:${row.info[1]}"></i>${esc(row.info[0])}</span>${row.plat ? ` · ${esc(row.plat)} 號月台` : ''}`;
+  } else if (row.kind === 'lrt') {
+    rt = `<div class="rt${sz(row.route)}">${flaps(String(row.route), 'r'+fk)}</div>`;
+    sub = `${coTag('lightRail')}${row.plat ? ` · ${esc(row.plat)} 號月台` : ''}`;
+  } else {
+    rt = `<div class="rt${sz(row.route)}">${flaps(String(row.route), 'r'+fk)}</div>`;
+    sub = [...row.cos].map(coTag).join(' + ');
+  }
+  const adv = advice(row, g.walk);
+  return `<div class="row${favs.has(fid) ? ' fav' : ''}">${rt}<div class="dst"><b>往 ${esc(row.dest)}</b><small>${sub}</small>${adv}</div><div class="eta">${etaCell(row, 'e'+fk)}</div>${star(fid, (row.route || row.info?.[0] || '') + ' 往 ' + row.dest)}</div>`;
+}
+function groupHtml(g){
+  const all = [...g.rows.values(), ...g.dyn];
+  const has = r => r.etas.some(e => mins(e.t) >= 0);
+  const fav = r => favs.has(g.name + '|' + r.key);
+  const next = r => { const e = r.etas.find(x => mins(x.t) >= 0); return e ? e.t : Infinity; };
+  all.sort((a, b) => (fav(b) - fav(a)) || (next(a) - next(b)) || String(a.route || a.dest).localeCompare(String(b.route || b.dest), 'zh-HK', {numeric:true}));
+  const live = all.filter(r => has(r) || fav(r)), idle = all.filter(r => !has(r) && !fav(r));
+  const cos = [...g.cos].map(coTag).join(' ');
+  const body = !g.loaded ? '<div class="skel"></div><div class="skel"></div>'
+    : (live.length ? live.map(r => rowHtml(g, r)).join('') : '<div class="loading">呢個站暫時冇班次。</div>')
+      + (idle.length ? `<details class="more"><summary>另外 ${idle.length} 條路線暫無班次</summary>${idle.map(r => rowHtml(g, r)).join('')}</details>` : '');
+  const dm = Math.round(g.d);
+  return `<section class="stop" aria-label="${esc(g.name)}"><div class="stop-h"><div><h2>${esc(g.name)}</h2><p>${cos}</p></div><div class="dist"><strong>${dm < 1 ? '0' : dm}<span> 米</span></strong><span>步行約 ${g.walk} 分鐘</span></div></div><div class="cols" aria-hidden="true"><span>路線</span><span>目的地</span><span>到站</span><span></span></div>${body}</section>`;
+}
+function render(){
+  if (!DB) return;
+  const open = new Set([...document.querySelectorAll('details.more[open]')].map(d => d.closest('.stop')?.getAttribute('aria-label')));
+  const st = $('status');
+  if (!here) { st.innerHTML = ''; $('board').innerHTML = `<div class="hero"><div class="bigflap" aria-hidden="true">${[...'揀地點'].map(c => `<span class="f">${c}</span>`).join('')}</div><h1>附近有咩車，幾耐到？</h1><p>撳上面「定位」用你而家嘅位置，或者搜尋一個車站、揀一個常用地點。</p></div>`; return; }
+  const n = groups.length;
+  let html = `<div class="status"><b>${n ? `${effRadius} 米內有 ${n} 個車站` : `${effRadius} 米內搵唔到車站`}</b><span>${lastFetch ? '更新於 ' + new Date(lastFetch).toLocaleTimeString('en-GB', {timeZone:'Asia/Hong_Kong', hour12:false}) + ' · 每 30 秒自動更新' : ''}</span></div>`;
+  if (effRadius > radius && n) html += `<p class="notice">${radius} 米內冇車站，已自動擴大到 ${effRadius} 米。</p>`;
+  if (here.mode === 'gps' && here.acc > 50) html += `<p class="notice">GPS 誤差約 ±${Math.round(here.acc)} 米，附近車站可能唔準，可以行出開揚啲嘅位置再試。</p>`;
+  st.innerHTML = html;
+  $('board').innerHTML = n ? groups.map(groupHtml).join('') : `<div class="hero"><h1>附近冇車站</h1><p>試下揀大啲嘅範圍，或者搜尋另一個車站。</p></div>`;
+  for (const d of document.querySelectorAll('details.more')) if (open.has(d.closest('.stop')?.getAttribute('aria-label'))) d.open = true;
+}
+
+/* ---------- 位置 ---------- */
+function setHere(p){
+  here = p;
+  $('locName').textContent = p.label;
+  $('locSub').textContent = p.mode === 'gps' ? `你嘅位置 · 誤差約 ±${Math.round(p.acc || 0)} 米` : '手動揀選 · 撳「定位」改用你嘅位置';
+  for (const b of document.querySelectorAll('.chip')) b.setAttribute('aria-pressed', String(p.mode === 'manual' && b.dataset.label === p.label));
+  if (p.mode === 'manual') store.set('place', {lat:p.lat, lng:p.lng, label:p.label});
+  makeGroups();
+}
+function stopGps(){ if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; } $('gpsBtn').removeAttribute('aria-busy'); }
+function startGps(){
+  if (!('geolocation' in navigator)) { showNote('呢部機唔支援定位，請用搜尋或者揀地點。', true); return; }
+  stopGps();
+  $('gpsBtn').setAttribute('aria-busy', 'true');
+  $('locName').textContent = '定位中…';
+  let first = true;
+  watchId = navigator.geolocation.watchPosition(pos => {
+    $('gpsBtn').removeAttribute('aria-busy');
+    const p = {lat:pos.coords.latitude, lng:pos.coords.longitude, acc:pos.coords.accuracy, label:'你嘅位置', mode:'gps'};
+    if (!inHK(p)) { stopGps(); $('locName').textContent = '你而家唔喺香港'; $('locSub').textContent = '定位顯示你喺香港以外，可以搜尋或者揀一個地點試用'; showNote('你嘅位置唔喺香港範圍。可以搜尋車站或者撳下面嘅地點試用。'); return; }
+    if (first || !here || here.mode !== 'gps' || dist(here, p) > 15) { first = false; setHere(p); }
+    else { here.acc = p.acc; $('locSub').textContent = `你嘅位置 · 誤差約 ±${Math.round(p.acc)} 米`; }
+  }, err => {
+    stopGps();
+    if (!here) { $('locName').textContent = '未定位'; }
+    showNote(err.code === 1 ? '你冇俾定位權限。可以喺瀏覽器設定開返，或者用搜尋 / 揀地點。' : '暫時攞唔到位置，請再試或者用搜尋。', true);
+  }, {enableHighAccuracy:true, maximumAge:10000, timeout:20000});
+}
+function showNote(msg, red){
+  $('status').innerHTML = `<p class="notice${red ? ' red' : ''}">${esc(msg)}</p>`;
+}
+
+/* ---------- 搜尋 ---------- */
+function search(q){
+  const box = $('results');
+  q = q.trim().toLowerCase();
+  if (!q || !DB) { box.classList.remove('on'); box.innerHTML = ''; return; }
+  const seen = new Map();
+  for (const [id, s] of Object.entries(DB.stopList)) {
+    if (!IDX.has(id)) continue;
+    const zh = s.name.zh || '', en = (s.name.en || '').toLowerCase();
+    if (!zh.toLowerCase().includes(q) && !en.includes(q)) continue;
+    const k = zh;
+    if (!seen.has(k)) seen.set(k, {name:zh, en:s.name.en, loc:s.location, cos:new Set(), score: zh.startsWith(q) ? 0 : 1});
+    for (const e of IDX.get(id)) seen.get(k).cos.add(e.co);
+    if (seen.size > 400) break;
+  }
+  const list = [...seen.values()].sort((a, b) => a.score - b.score || a.name.length - b.name.length).slice(0, 10);
+  box.innerHTML = list.length ? list.map((x, i) => `<button type="button" role="option" data-i="${i}"><span class="nm">${esc(x.name)}</span>${[...x.cos].slice(0, 3).map(coTag).join(' ')}</button>`).join('') : '<div class="empty">搵唔到呢個車站</div>';
+  box.classList.add('on');
+  box.onclick = ev => {
+    const b = ev.target.closest('button[data-i]'); if (!b) return;
+    const x = list[+b.dataset.i];
+    stopGps(); $('q').value = ''; box.classList.remove('on');
+    setHere({lat:x.loc.lat, lng:x.loc.lng, label:x.name, mode:'manual'});
+  };
+}
+
+/* ---------- 控制 ---------- */
+function setupControls(){
+  $('seg').innerHTML = RADII.map(r => `<button type="button" data-r="${r}" aria-pressed="${r === radius}">${r} 米</button>`).join('');
+  $('seg').onclick = ev => {
+    const b = ev.target.closest('button[data-r]'); if (!b) return;
+    radius = +b.dataset.r; store.set('radius', radius);
+    for (const x of $('seg').children) x.setAttribute('aria-pressed', String(x === b));
+    makeGroups();
+  };
+  $('gpsBtn').onclick = startGps;
+  let tq; $('q').oninput = e => { clearTimeout(tq); tq = setTimeout(() => search(e.target.value), 180); };
+  $('q').onkeydown = e => { if (e.key === 'Escape') { $('results').classList.remove('on'); } if (e.key === 'Enter') { $('results').querySelector('button')?.click(); } };
+  document.addEventListener('click', e => { if (!e.target.closest('.search')) $('results').classList.remove('on'); });
+  $('board').addEventListener('click', e => {
+    const b = e.target.closest('[data-fav]'); if (!b) return;
+    const id = b.dataset.fav; favs.has(id) ? favs.delete(id) : favs.add(id);
+    store.set('favs', [...favs]); render();
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+}
+function setupChips(){
+  $('chips').innerHTML = PRESETS.filter(([c]) => DB.stopList[c]).map(([c, n]) => `<button class="chip" type="button" data-c="${c}" data-label="${n}站" aria-pressed="false">${n}</button>`).join('');
+  $('chips').onclick = ev => {
+    const b = ev.target.closest('button[data-c]'); if (!b) return;
+    const s = DB.stopList[b.dataset.c].location;
+    stopGps(); setHere({lat:s.lat, lng:s.lng, label:b.dataset.label, mode:'manual'});
+  };
+}
+
+/* ---------- 開機 ---------- */
+async function boot(){
+  tick(); setInterval(tick, 10000);
+  setupControls();
+  try { DB = await loadDb(); }
+  catch (e) { $('board').innerHTML = `<div class="hero"><h1>載入唔到路線資料</h1><p>請檢查網絡再重新整理。（${esc(e.message)}）</p></div>`; return; }
+  buildIndex(); setupChips();
+  const saved = store.get('place', null);
+  if (saved) setHere({...saved, mode:'manual'}); else render();
+  if (navigator.permissions) navigator.permissions.query({name:'geolocation'}).then(p => { if (p.state === 'granted') startGps(); }).catch(() => {});
+  timer = setInterval(() => refresh(), 5000);
+  setInterval(() => { if (groups.length && !document.hidden) render(); }, 15000);
+}
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+boot();
+}
+</script>
+</body>
+</html>
