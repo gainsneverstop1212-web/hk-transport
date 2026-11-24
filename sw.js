@@ -1,5 +1,5 @@
 // 港途 service worker：只快取 app 外殼，實時到站一律唔快取
-const SHELL = 'hkgo-shell-v1';
+const SHELL = 'hkgo-shell-v2';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
