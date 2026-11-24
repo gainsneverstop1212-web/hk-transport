@@ -183,6 +183,24 @@ details.more[open]>summary::before{content:"－ "}
 
 /* ---------- 路線搜尋 ---------- */
 #v-route{padding-bottom:300px}
+#v-route.picking{padding-bottom:24px}
+#v-route.picking .keypad,#v-route.picking .rq{display:none}
+#v-route #rFilt{padding-top:14px}
+.linecard{background:#161616;border:1px solid var(--line);margin:12px 0;scroll-margin-top:72px}
+.linecard header{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.linecard h3{margin:0;font:800 22px/1.1 var(--disp)}
+.lc-bar{width:10px;align-self:stretch;min-height:28px;background:var(--c)}
+.linecard .dirs{display:grid}
+.dirb{display:block;width:100%;text-align:left;border:0;border-top:1px solid #222;background:none;padding:12px 14px;min-height:56px}
+.dirb:first-child{border-top:0}
+.dirb:hover{background:#1c1c1c}
+.dirb b{display:block;font-weight:600}
+.dirb small{display:block;color:var(--grey);font-size:13px}
+.linegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.linegrid.lrt{grid-template-columns:repeat(auto-fill,minmax(64px,1fr))}
+.lineb{height:48px;border:0;border-left:8px solid var(--c);background:#1c1c1c;color:#fff;font:700 17px/1.1 var(--disp);text-align:left;padding:0 12px}
+.lineb.lr{border-left:0;text-align:center;background:#2b2612;color:var(--yellow);font-size:20px}
+.lineb:hover{background:#262626}
 .rq{display:flex;align-items:center;gap:10px;padding:16px 0 10px}
 .rq-disp{flex:1;display:flex;gap:4px;min-height:52px;align-items:center}
 .rq-disp .f{font-size:34px;height:50px;min-width:36px;color:var(--yellow)}

@@ -65,6 +65,9 @@ export function flaps(text, key, cls = ''){
   return [...s].map(c => c === ':' ? '<span class="sep">:</span>' : `<span class="f${cls ? ' ' + cls : ''}${changed ? ' flip' : ''}">${esc(c)}</span>`).join('');
 }
 export const routeTiles = (route, key) => { const n = [...String(route)].length; return `<div class="rt${n >= 5 ? ' s5' : n === 4 ? ' s4' : ''}">${flaps(route, key)}</div>`; };
+// 路線字粒：港鐵用綫名、渡輪用「渡輪」，其他用路線號碼
+export const tilesFor = (r, key) => !r ? routeTiles('?') : r.co[0] === 'mtr' ? lineTiles(r.route) : FERRY.has(r.co[0]) ? routeTiles(L('渡輪', 'BOAT'), key) : routeTiles(r.route, key);
+export const routeLabel = r => !r ? '' : r.co[0] === 'mtr' ? lineName(r.route) : FERRY.has(r.co[0]) ? coName(r.co[0]) : r.route;
 export const lineTiles = c => `<div class="rt ln${darkText(c) ? ' dark' : ''}" style="--c:${lineColor(c)}">${[...lineShort(c)].slice(0, 3).map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`;
 
 /* ---------- 數據載入 ---------- */

@@ -1,5 +1,5 @@
 // 港途 · 常用：智能主頁、常用地點、收藏路線、設定
-import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, routeTiles, lineTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, toast} from './core.js';
+import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, toast} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPicker} from './ui.js';
 import {planTrip, toTrip, legChips, planTo} from './plan.js';
@@ -88,7 +88,7 @@ async function drawFavs(){
   }
   el.innerHTML = [...favs].sort((a, b) => b[1].at - a[1].at).map(([id, d]) => {
     const r = d.kind === 'bus' ? S.DB.routeList[d.key] : null;
-    const tiles = d.kind === 'mtr' ? lineTiles(d.line) : routeTiles(d.kind === 'lrt' ? d.route : r?.route || '?');
+    const tiles = d.kind === 'mtr' ? lineTiles(d.line) : d.kind === 'lrt' ? routeTiles(d.route) : tilesFor(r);
     const title = d.kind === 'mtr' ? L('往 ', 'To ') + stopName(d.dest) : L('往 ', 'To ') + nm(d.kind === 'lrt' ? d.dest : r?.dest);
     const sub = d.kind === 'mtr' ? lineName(d.line) + ' · ' + stopName(d.sta) : stopName(d.kind === 'lrt' ? d.stop : d.stop);
     const l = (favEta.get(id) || []).filter(e => mins(e.t) >= 0);

@@ -1,5 +1,5 @@
 // 港途 · 路線搜尋 + 路線詳情
-import {S, $, esc, store, L, nm, mins, hhmm, flaps, routeTiles, lineTiles, coTag, coName, lineName, lineColor, stopLoc, stopName,
+import {S, $, esc, store, L, nm, mins, hhmm, flaps, routeTiles, lineTiles, tilesFor, LINES, coTag, coName, lineName, lineColor, stopLoc, stopName,
   dist, walkMin, serviceInfo, rideMin, fareAt, money, FERRY, icon, toast} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {openPage, starBtn, toggleFav, isFav, on} from './ui.js';
@@ -8,17 +8,19 @@ import {startTrip} from './trip.js';
 
 const FILTERS = [['all', '全部', 'All', null], ['bus', '巴士', 'Bus', ['kmb', 'ctb', 'nlb', 'lrtfeeder']], ['gmb', '小巴', 'Minibus', ['gmb']],
   ['mtr', '港鐵', 'MTR', ['mtr']], ['lrt', '輕鐵', 'Light Rail', ['lightRail']], ['ferry', '渡輪', 'Ferry', [...FERRY]]];
+const PICK = new Set(['mtr', 'lrt', 'ferry']);              // 呢幾類直接揀路線，唔使打字
+const TYPED = co => co !== 'mtr' && !FERRY.has(co);          // 鍵盤只搜尋巴士、小巴、輕鐵號碼
 let q = '', filt = 'all';
 const natural = (a, b) => a.localeCompare(b, 'en', {numeric: true});
 
 export function initRoute(){
   const v = $('v-route');
   v.innerHTML = `<div class="wrap">
-    <div class="rq"><div class="rq-disp" id="rqDisp" aria-live="polite"></div><button class="btn-d sm" id="rqClr" type="button">${L('清除', 'Clear')}</button></div>
     <div class="chips" id="rFilt">${FILTERS.map(([k, zh, en]) => `<button class="chip" type="button" data-f="${k}">${L(zh, en)}</button>`).join('')}</div>
+    <div class="rq" id="rq"><div class="rq-disp" id="rqDisp" aria-live="polite"></div><button class="btn-d sm" id="rqClr" type="button">${L('清除', 'Clear')}</button></div>
     <div id="rList" class="rlist"></div></div>
     <div class="keypad" id="keypad" aria-label="${L('路線鍵盤', 'Route keypad')}"><div class="kp-num"></div><div class="kp-let"></div></div>`;
-  $('rFilt').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; filt = b.dataset.f; draw(); };
+  $('rFilt').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; filt = b.dataset.f; draw(); window.scrollTo(0, 0); };
   $('rqClr').onclick = () => { q = ''; draw(); };
   $('keypad').onclick = e => {
     const b = e.target.closest('button[data-k]'); if (!b || b.disabled) return;
@@ -26,17 +28,61 @@ export function initRoute(){
     q = k === 'del' ? q.slice(0, -1) : (q + k).slice(0, 6);
     draw();
   };
-  $('rList').onclick = e => { const b = e.target.closest('[data-key]'); if (b) openRoute(b.dataset.key); };
+  $('rList').onclick = e => {
+    const j = e.target.closest('[data-jump]');
+    if (j) { filt = j.dataset.jump; draw(); setTimeout(() => document.getElementById('ln-' + j.dataset.line)?.scrollIntoView({block: 'start', behavior: 'smooth'}), 40); return; }
+    const b = e.target.closest('[data-key]'); if (b) openRoute(b.dataset.key);
+  };
   draw();
 }
 const allowed = co => { const f = FILTERS.find(x => x[0] === filt)[3]; return !f || f.includes(co); };
+const entriesOf = test => Object.entries(S.DB.routeList).filter(([, r]) => test(r));
+// 同一條綫／路線嘅每個方向（相同起點終點只留一個，正常班次排先）
+function directions(list){
+  const m = new Map();
+  for (const [k, r] of list.sort((a, b) => String(a[1].serviceType).localeCompare(String(b[1].serviceType)))) {
+    const sig = r.orig.zh + '>' + r.dest.zh;
+    if (!m.has(sig)) m.set(sig, [k, r]);
+  }
+  return [...m.values()];
+}
+const dirBtn = ([k, r]) => `<button class="dirb" type="button" data-key="${esc(k)}"><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${L('由 ', 'From ')}${esc(nm(r.orig))}${String(r.serviceType) !== '1' ? ' · ' + L('特別班', 'Special') : ''}</small></button>`;
+function mtrPicker(){
+  return Object.keys(LINES).map(c => {
+    const dirs = directions(entriesOf(r => r.co[0] === 'mtr' && r.route === c));
+    if (!dirs.length) return '';
+    return `<section class="linecard" id="ln-${c}" style="--c:${lineColor(c)}"><header><span class="lc-bar"></span><h3>${esc(lineName(c))}</h3></header><div class="dirs">${dirs.map(dirBtn).join('')}</div></section>`;
+  }).join('');
+}
+function lrtPicker(){
+  const by = new Map();
+  for (const e of entriesOf(r => r.co[0] === 'lightRail')) { if (!by.has(e[1].route)) by.set(e[1].route, []); by.get(e[1].route).push(e); }
+  return [...by.keys()].sort(natural).map(n => `<section class="linecard lrt" id="ln-${esc(n)}"><header>${routeTiles(n.replace('*', ''))}<h3>${L(`輕鐵 ${esc(n.replace('*', ''))} 綫`, `Light Rail ${esc(n.replace('*', ''))}`)}</h3></header><div class="dirs">${directions(by.get(n)).map(dirBtn).join('')}</div></section>`).join('');
+}
+function ferryPicker(){
+  const by = new Map();
+  for (const e of entriesOf(r => FERRY.has(r.co[0]))) { const co = e[1].co[0]; if (!by.has(co)) by.set(co, []); by.get(co).push(e); }
+  return [...by].map(([co, list]) => `<section class="linecard ferry"><header><span class="lc-bar" style="--c:${'#4aa3df'}"></span><h3>${esc(coName(co))}</h3></header><div class="dirs">${directions(list).map(dirBtn).join('')}</div></section>`).join('');
+}
+function railShortcuts(){
+  const lrtN = [...new Set(entriesOf(r => r.co[0] === 'lightRail').map(([, r]) => r.route))].sort(natural);
+  return `<p class="lbl pad">${L('港鐵', 'MTR')}</p><div class="linegrid">${Object.keys(LINES).filter(c => S.NUMS.has(c)).map(c => `<button type="button" class="lineb" data-jump="mtr" data-line="${c}" style="--c:${lineColor(c)}">${esc(lineName(c))}</button>`).join('')}</div>
+    <p class="lbl pad">${L('輕鐵', 'Light Rail')}</p><div class="linegrid lrt">${lrtN.map(n => `<button type="button" class="lineb lr" data-jump="lrt" data-line="${esc(n)}">${esc(n.replace('*', ''))}</button>`).join('')}</div>`;
+}
 function draw(){
   for (const b of $('rFilt').children) b.setAttribute('aria-pressed', String(b.dataset.f === filt));
+  const picking = PICK.has(filt);
+  $('v-route').classList.toggle('picking', picking);
+  const list = $('rList');
+  if (picking) {
+    list.innerHTML = filt === 'mtr' ? mtrPicker() : filt === 'lrt' ? lrtPicker() : ferryPicker();
+    return;
+  }
   $('rqDisp').innerHTML = q ? flaps(q.padEnd(4, ' ')) : `<span class="ph">${L('輸入路線號碼', 'Type a route')}</span>`;
   const nexts = new Set(), keys = [];
   for (const [num, ks] of S.NUMS) {
     if (!num.toUpperCase().startsWith(q)) continue;
-    const okKeys = ks.filter(k => S.DB.routeList[k].co.some(allowed));
+    const okKeys = ks.filter(k => S.DB.routeList[k].co.some(c => allowed(c) && TYPED(c)));
     if (!okKeys.length) continue;
     if (num.length > q.length) nexts.add(num[q.length].toUpperCase());
     if (q) keys.push(...okKeys);
@@ -46,19 +92,18 @@ function draw(){
     : `<button type="button" data-k="${k}" ${k !== 'del' && !nexts.has(k) ? 'disabled' : ''} aria-label="${k === 'del' ? L('刪除', 'Delete') : k}">${k === 'del' ? '⌫' : k}</button>`).join('');
   const lets = [...nexts].filter(c => !/[0-9]/.test(c)).sort();
   $('keypad').querySelector('.kp-let').innerHTML = lets.map(c => `<button type="button" data-k="${esc(c)}">${esc(c)}</button>`).join('');
-  const list = $('rList');
   if (!q) {
     const rec = store.get('recentRoutes', []).filter(k => S.DB.routeList[k]);
-    list.innerHTML = rec.length ? `<p class="lbl pad">${L('最近睇過', 'Recent')}</p>` + rec.map(itemHtml).join('') : `<p class="hint">${L('用下面嘅鍵盤輸入路線號碼。只會亮起有路線嘅數字同字母。', 'Use the keypad below. Only keys that lead to a real route light up.')}</p>`;
+    list.innerHTML = (filt === 'all' ? railShortcuts() : '') + (rec.length ? `<p class="lbl pad">${L('最近睇過', 'Recent')}</p>` + rec.map(itemHtml).join('') : `<p class="hint">${L('用下面嘅鍵盤輸入巴士或者小巴號碼。只會亮起有路線嘅數字同字母。', 'Type a bus or minibus number below. Only keys that lead to a real route light up.')}</p>`);
     return;
   }
   keys.sort((a, b) => { const A = S.DB.routeList[a], B = S.DB.routeList[b]; return natural(A.route, B.route) || A.co[0].localeCompare(B.co[0]) || String(A.serviceType).localeCompare(String(B.serviceType)); });
   list.innerHTML = keys.slice(0, 80).map(itemHtml).join('') || `<p class="hint">${L('冇呢條路線', 'No such route')}</p>`;
 }
 function itemHtml(k){
-  const r = S.DB.routeList[k], mtr = r.co[0] === 'mtr';
+  const r = S.DB.routeList[k];
   const special = String(r.serviceType) !== '1' ? `<em>${L('特別班', 'Special')}</em>` : '';
-  return `<button class="ritem" type="button" data-key="${esc(k)}">${mtr ? lineTiles(r.route) : routeTiles(r.route)}
+  return `<button class="ritem" type="button" data-key="${esc(k)}">${tilesFor(r)}
     <span class="ri-t"><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${L('由 ', 'From ')}${esc(nm(r.orig))}</small></span>
     <span class="ri-c">${r.co.map(coTag).join(' ')}${special}</span></button>`;
 }
@@ -99,7 +144,7 @@ export function openRoute(key, focusStop){
   const opp = findOpposite(key, r, co);
   const pg = openPage('route-page');
   pg.innerHTML = `<header class="pg-h"><button class="icon-btn" data-back type="button" aria-label="${L('返回', 'Back')}">${icon.back}</button>
-      ${mtr ? lineTiles(r.route) : routeTiles(r.route)}<div class="pg-t"><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${L('由 ', 'From ')}${esc(nm(r.orig))} · ${r.co.map(coName).join(' + ')}</small></div></header>
+      ${tilesFor(r)}<div class="pg-t"><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${L('由 ', 'From ')}${esc(nm(r.orig))} · ${r.co.map(coName).join(' + ')}</small></div></header>
     <div class="wrap">
       <div class="facts">
         ${opp ? `<button class="chip" type="button" data-opp="${esc(opp[0])}">⇄ ${L('對頭線', 'Reverse')}</button>` : ''}

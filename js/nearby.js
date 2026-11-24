@@ -1,5 +1,5 @@
 // 港途 · 附近車站
-import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, lineName, lineColor, coTag, coName,
+import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
   stopLoc, stopName, bearing, compass, icon, FERRY, toast} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, setHere, startGps, stopGps, gpsOn, attachPicker, starBtn, toggleFav, isFav, openSheet, closeSheet} from './ui.js';
@@ -189,9 +189,9 @@ function rowHtml(g, row){
     sub = coTag('lightRail') + (row.plat ? ' · ' + L(`${esc(row.plat)} 號月台`, `Platform ${esc(row.plat)}`) : '');
     fid = row.key; label = row.route;
   } else {
-    rt = routeTiles(row.route, 'r' + g.name.zh + row.key);
+    rt = tilesFor(S.DB.routeList[row.key], 'r' + g.name.zh + row.key);
     sub = [...row.cos].map(coTag).join(' + ');
-    fid = row.key + '@' + row.srcs[0].stop; label = row.route;
+    fid = row.key + '@' + row.srcs[0].stop; label = routeLabel(S.DB.routeList[row.key]);
   }
   rowsById.set(fid, {g, row});
   const dest = row.kind === 'mtr' ? (row.dest ? stopName(row.dest) : lineName(row.line)) : nm(row.dest) || L('輕鐵', 'Light Rail');
@@ -296,7 +296,7 @@ function railEntry(g, row){
 function rowSheet(g, key, s, cos, list, note){
   const r = S.DB.routeList[key], st = r.stops[s.co], row = {route: r.route, key};
   const opts = st.slice(s.seq + 1).map((id, k) => `<option value="${s.seq + 1 + k}">${esc(stopName(id))}</option>`).join('');
-  openSheet(`<div class="sh-head">${s.co === 'mtr' ? lineTiles(r.route) : routeTiles(r.route)}<div><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${esc(nm(g.name))} · ${cos.map(coName).join(' + ')}</small></div></div>
+  openSheet(`<div class="sh-head">${tilesFor(r)}<div><b>${L('往', 'To')} ${esc(nm(r.dest))}</b><small>${esc(nm(g.name))} · ${cos.map(coName).join(' + ')}</small></div></div>
     <div class="sh-etas">${list.length ? list.slice(0, 3).map(e => `<span class="${e.sched ? 'sched' : ''}"><b>${mins(e.t) <= 0 ? L('即將', 'now') : mins(e.t) >= 60 ? hhmm(e.t) : mins(e.t) + L(' 分', ' min')}</b><small>${hhmm(e.t)}</small></span>`).join('') : `<span class="none">${esc(note || L('暫無班次', 'No service'))}</span>`}</div>
     <label class="fld"><span>${L('喺邊個站落車？（可以唔揀）', 'Get off at (optional)')}</span><select id="alight"><option value="">${L('未決定', 'Not sure yet')}</option>${opts}</select></label>
     <div class="sh-btns"><button class="btn-y big" id="goTrip" type="button">${icon.door}<span>${L('出門倒數', 'Leave countdown')}</span></button>

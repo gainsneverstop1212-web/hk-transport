@@ -1,5 +1,5 @@
 // 港途 · 出門倒數模式（由出門、等車、搭車到落車提示）
-import {S, $, esc, store, L, nm, hhmm, mins, now, flaps, routeTiles, lineTiles, lineName, stopName, stopLoc, dist, rideMin, avgWait,
+import {S, $, esc, store, L, nm, hhmm, mins, now, flaps, tilesFor, routeLabel, routeTiles, lineTiles, lineName, stopName, stopLoc, dist, rideMin, avgWait,
   speak, notify, toast, icon} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {openSheet, closeSheet} from './ui.js';
@@ -84,8 +84,8 @@ const clock = ms => {
   const neg = ms < 0, s = Math.floor(Math.abs(ms) / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = s % 60;
   return (neg ? '-' : '') + (h ? h + ':' + String(m).padStart(2, '0') : String(m).padStart(2, '0')) + ':' + String(ss).padStart(2, '0');
 };
-const rname = l => { const r = S.DB.routeList[l.key]; return l.co === 'mtr' ? lineName(r.route) : r.route; };
-const tiles = l => { const r = S.DB.routeList[l.key]; return l.co === 'mtr' ? lineTiles(r.route) : routeTiles(r.route); };
+const rname = l => routeLabel(S.DB.routeList[l.key]);
+const tiles = l => tilesFor(S.DB.routeList[l.key]);
 const Y = t => `<em>${hhmm(t)}</em>`;
 
 function stopsLeft(l){

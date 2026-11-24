@@ -1,6 +1,6 @@
 // 港途 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
 import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, rideMin, cumTimes, avgWait, runningNow, fareAt, money, stopLoc, stopName,
-  hhmm, mins, now, nextDepartures, routeTiles, lineTiles, coName, lineName, icon} from './core.js';
+  hhmm, mins, now, nextDepartures, tilesFor, routeLabel, routeTiles, lineTiles, coName, lineName, icon} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {attachPicker, go, on} from './ui.js';
 import {startTrip} from './trip.js';
@@ -210,7 +210,7 @@ export function legChips(o){
   o.legs.forEach((l, i) => {
     const r = rt(l.key);
     if (i > 0 && l.walk) parts.push(`<span class="lc walk">${icon.walk}${l.walk}′</span>`);
-    parts.push(`<span class="lc">${l.co === 'mtr' ? lineTiles(r.route) : routeTiles(r.route)}</span>`);
+    parts.push(`<span class="lc">${tilesFor(r)}</span>`);
   });
   if (o.walkEnd) parts.push(`<span class="lc walk">${icon.walk}${o.walkEnd}′</span>`);
   return parts.join('<span class="lc-sep" aria-hidden="true">›</span>');
@@ -220,7 +220,7 @@ export function steps(o){
   const out = [];
   o.legs.forEach((l, i) => {
     const r = rt(l.key), tm = o.times[i], nStops = l.aseq - l.bseq, ride = Math.round(rideMin(r, l.co, l.bseq, l.aseq));
-    const name = l.co === 'mtr' ? lineName(r.route) : r.route;
+    const name = routeLabel(r);
     if (i === 0) out.push(`<li><b>${hhmm(o.leaveT)}</b> ${L(`出門，行 ${o.walk0} 分鐘去 ${esc(stopName(l.board))}`, `Leave, walk ${o.walk0} min to ${esc(stopName(l.board))}`)}</li>`);
     else out.push(`<li><b>${hhmm(o.times[i - 1].alightT)}</b> ${l.walk ? L(`行 ${l.walk} 分鐘去 ${esc(stopName(l.board))} 轉車`, `Walk ${l.walk} min to ${esc(stopName(l.board))}`) : L(`喺 ${esc(stopName(l.board))} 轉車`, `Change at ${esc(stopName(l.board))}`)}</li>`);
     out.push(`<li class="ride"><b class="${tm.live ? 'live' : ''}">${hhmm(tm.boardT)}</b> ${L(`搭 ${esc(name)} 往 ${esc(nm(r.dest))}`, `Take ${esc(name)} towards ${esc(nm(r.dest))}`)}<small>${coName(l.co)} · ${L(`坐 ${nStops} 個站，約 ${ride} 分鐘`, `${nStops} stops, ~${ride} min`)}${tm.live ? '' : ' · ' + L('估計班次', 'estimated')}</small></li>`);
