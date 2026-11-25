@@ -56,7 +56,7 @@ export function initNearby(){
     if ((st === 'rough' || st === 'busy') && S.here?.mode !== 'gps') { $('locSub').textContent = st === 'rough' ? L('定位緊，等 GPS 收到衛星（行近窗口會快啲）…', 'Locating — waiting for GPS (near a window helps)…') : L('定位緊…', 'Locating…'); }
   });
   on('favs', () => render());
-  on('tab', t => { if (t === 'near') { refresh(); if (mode === 'map') render(); } });
+  on('tab', t => { if (t === 'near') { refresh(); if (mode === 'map') render(); } else document.body.classList.remove('mapmode'); });
   setInterval(() => { if (!$('v-near').hidden) refresh(); }, 5000);
   setInterval(() => { if (!$('v-near').hidden && groups.length && !document.hidden) render(); }, 15000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
@@ -257,14 +257,26 @@ export function render(){
   if (groups.some(g => [...g.rows.values()].some(r => live(r)[0]?.sched))) h += `<p class="legend"><span class="lg-s">05</span>${L('灰色數字 = 時間表班次，唔係實時位置', 'Grey digits = timetable, not live')}</p>`;
   if (document.activeElement?.id !== 'rad') st.innerHTML = h;     // 用家揀緊範圍就唔好重畫
   $('nmap').hidden = mode !== 'map';
+  // 地圖模式：收埋下面嘅車站列表（撳圖釘先跳去列表），地圖填滿畫面，唔使喺地圖上面碌頁面
+  bd.hidden = mode === 'map'; document.body.classList.toggle('mapmode', mode === 'map');
   if (mode === 'map') drawMap();
   bd.innerHTML = n ? groups.map(groupHtml).join('') + (hiddenN ? `<button class="btn-d big" id="moreStops" type="button">${L(`仲有 ${hiddenN} 個車站，顯示更多`, `${hiddenN} more stops — show more`)}</button>` : '') : `<div class="hero"><h1>${L('附近冇車站', 'No stops nearby')}</h1><p>${L('試下揀大啲嘅範圍，或者搜尋另一個地方。', 'Try a larger radius or another place.')}</p></div>`;
   if (focusKey) { const el = focusKey.startsWith('f:') ? bd.querySelector(`[data-fav="${CSS.escape(focusKey.slice(2))}"]`) : bd.querySelector(`[data-row="${CSS.escape(focusKey.slice(2))}"]`); el?.focus({preventScroll: true}); }
   for (const d of bd.querySelectorAll('details')) if (open.has(d.closest('[aria-label]')?.getAttribute('aria-label') + (d.classList.contains('compact') ? '#c' : ''))) d.open = true;
 }
 
+// 同一時間只畫一次：之前兩次重畫撞埋，第二次會刪咗第一個地圖，第一次再加掣就出錯，成個地圖變「載入唔到」
+let mapBusy = false, mapAgain = false;
 async function drawMap(){
+  if (mapBusy) { mapAgain = true; return; }
+  mapBusy = true;
+  try { await drawMapOnce(); } finally { mapBusy = false; if (mapAgain) { mapAgain = false; drawMap(); } }
+}
+async function drawMapOnce(){
   const el = $('nmap');
+  // 地圖高度 = 畫面剩低嘅位（扣除上面嘅控制同底部選單）
+  const absTop = el.getBoundingClientRect().top + scrollY, tabsH = $('tabs').offsetHeight || 64;
+  el.style.height = Math.max(300, Math.round((window.visualViewport?.height || innerHeight) - absTop - tabsH - 12)) + 'px';
   try {
     if (!map || !el._map) {
       map = await makeMap(el, S.here, 17); lastView = ''; panned = false;
@@ -305,7 +317,7 @@ async function drawMap(){
       mode = 'list'; store.set('nearMode', mode); paintCtrl(); render();
       setTimeout(() => document.getElementById('g' + i)?.scrollIntoView({behavior: 'smooth', block: 'start'}), 50);
     })));
-  } catch { el.innerHTML = `<p class="loading">${L('地圖載入唔到（可能冇網絡）', 'Map unavailable (offline?)')}</p>`; }
+  } catch (e) { console.error('drawMap', e); el.innerHTML = `<p class="loading">${L('地圖載入唔到（可能冇網絡）', 'Map unavailable (offline?)')}</p>`; }
 }
 
 /* ---------- 撳一行 ---------- */

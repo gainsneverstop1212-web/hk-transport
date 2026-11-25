@@ -22,12 +22,13 @@ export function mapLib(){
   return loading;
 }
 
-export async function makeMap(el, center, zoom = 17){
+// preview：細地圖做預覽，手指上下掃係碌頁面；撳一下先開全螢幕可以拖
+export async function makeMap(el, center, zoom = 17, opt = {}){
   const L = await mapLib();
   if (el._map) { el._map.remove(); el._map = null; }
   // 一隻手指拖動、兩隻手指縮放（明確開啟，唔靠預設）
   const m = L.map(el, {zoomControl: false, minZoom: 10, maxZoom: 19, maxBounds: [[22.05, 113.75], [22.65, 114.55]], attributionControl: true,
-    dragging: true, touchZoom: true, doubleClickZoom: true, scrollWheelZoom: true, inertia: true, bounceAtZoomLimits: false})
+    dragging: !opt.preview, touchZoom: !opt.preview, doubleClickZoom: !opt.preview, scrollWheelZoom: !opt.preview, boxZoom: !opt.preview, keyboard: !opt.preview, inertia: true, bounceAtZoomLimits: false})
     .setView([center.lat, center.lng], zoom);
   m.attributionControl.setPrefix(false);
   L.tileLayer('https://mapapi.geodata.gov.hk/gs/api/v1.0.0/xyz/basemap/WGS84/{z}/{x}/{y}.png', {

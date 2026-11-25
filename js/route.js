@@ -2,7 +2,7 @@
 import {S, $, esc, store, L, nm, doorMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, lrtColor, tilesFor, LINES, coTag, coName, lineName, lineColor, darkText, stopLoc, stopName,
   dist, walkMin, serviceInfo, rideMin, cumTimes, fareAt, legFare, money, FERRY, icon, toast, stopsWithin} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
-import {openPage, starBtn, toggleFav, isFav, on, openSheet, closeSheet} from './ui.js';
+import {openPage, starBtn, toggleFav, isFav, on, openSheet, closeSheet, addLayer, back} from './ui.js';
 import {makeMap, pin, youIcon} from './map.js';
 import {startTrip} from './trip.js';
 
@@ -351,7 +351,20 @@ export function openRoute(key, focusStop){
     if (map) { map.invalidateSize(); return; }
     try {
       const pts = stops.map(stopLoc).filter(Boolean);
-      map = await makeMap(pg.querySelector('#rmap'), pts[Math.max(0, sel)] || pts[0], 15);
+      const box = pg.querySelector('#rmap');
+      map = await makeMap(box, pts[Math.max(0, sel)] || pts[0], 15, {preview: true});
+      // 預覽：上下掃碌頁面；撳地圖（唔係撳站）就開全螢幕，一隻手指拖動
+      const hint = document.createElement('button'); hint.type = 'button'; hint.className = 'map-hint'; hint.textContent = L('撳一下放大地圖', 'Tap to expand map'); box.appendChild(hint);
+      const setFull = on => {
+        box.classList.toggle('full', on); document.body.classList.toggle('mapfull', on);
+        for (const h of ['dragging', 'touchZoom', 'doubleClickZoom', 'scrollWheelZoom']) on ? map[h].enable() : map[h].disable();
+        hint.textContent = on ? L('✕ 收細地圖', '✕ Close map') : L('撳一下放大地圖', 'Tap to expand map');
+        setTimeout(() => { map.invalidateSize(); if (!on && line) map.fitBounds(line.getBounds(), {padding: [20, 20]}); }, 60);
+      };
+      let full = false;
+      const open = () => { if (full) return; full = true; setFull(true); addLayer(() => { full = false; setFull(false); }); };
+      hint.onclick = e => { e.stopPropagation(); if (full) back(); else open(); };
+      map.on('click', () => { if (!full) open(); });
       line = window.L.polyline(pts.map(p => [p.lat, p.lng]), {color: col || '#ffc917', weight: 5, opacity: .9}).addTo(map);
       if (S.here) window.L.marker([S.here.lat, S.here.lng], {icon: youIcon(), interactive: false}).addTo(map);
       map.fitBounds(line.getBounds(), {padding: [20, 20]});           // 先睇晒成條路線；撳站先移過去
