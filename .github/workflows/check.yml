@@ -1,0 +1,43 @@
+# 港住走 · 自動檢查：每次 push 或者開 PR 都會行，防止壞咗嘅版本上線
+#   1. 版本號：js/core.js 嘅 APP_VER 同 sw.js 嘅 SHELL 要一樣，sw.js 快取清單要齊
+#   2. 開機測試：用冇畫面嘅 Chrome 開 app、逐個分頁㩒一次，有 JavaScript 錯誤就亮紅燈
+# 本機自己試：node tools/ci/check-version.mjs ；cd tools/ci && npm install && cd ../.. && node tools/ci/smoke.mjs
+name: check
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  version:
+    name: 版本號一致
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tools/ci/check-version.mjs
+
+  smoke:
+    name: 開機測試（headless Chrome）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 安裝 Playwright 同 Chromium
+        working-directory: tools/ci
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: 開 app（真係下載全港路線資料）
+        run: node tools/ci/smoke.mjs
