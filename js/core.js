@@ -61,7 +61,8 @@ export const lineColor = c => LINES[c]?.[2] || '#e2231a';
 export const darkText = c => c === 'SIL' || c === 'EAL';
 // 輕鐵路線顏色（跟站牌顏色）
 const LRT_C = {'505': '#e4002b', '507': '#00a650', '610': '#8a4b1f', '614': '#00a3e0', '614P': '#f28fb0', '615': '#ffd200', '615P': '#1d3c8f',
-  '705': '#86c440', '706': '#a77bca', '751': '#f39200', '751P': '#c66a00', '761P': '#6c2c91'};
+  '705': '#86c440', '706': '#a77bca', '751': '#f39200', '751P': '#c66a00', '761P': '#6c2c91',
+  '506P': '#d6457f', '507P': '#4fbf7a', '610P': '#b5773f', '720': '#1fa59a', 'SPR': '#7a7a7a'};
 export const lrtColor = r => LRT_C[String(r).replace('*', '')] || '#d3a809';
 const LRT_DARK = new Set(['615', '705', '614P', '614']);
 export const lrtTiles = r => { const n = String(r).replace('*', ''); return `<div class="rt ln lr${LRT_DARK.has(n) ? ' dark' : ''}${n.length >= 4 ? ' s4' : ''}" style="--c:${lrtColor(n)}">${[...n].map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`; };

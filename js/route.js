@@ -72,7 +72,9 @@ function strip(r, co){
   return `<div class="strip" aria-hidden="true"><div class="strip-d">${dots}</div><div class="strip-t"><span>${esc(stopName(st[0]))}</span><span>${esc(stopName(st[st.length - 1]))}</span></div></div>`;
 }
 const endMin = (r, co) => { const c = cumTimes(r, co); return Math.round(c[c.length - 1] || 0); };
-const dirPill = ([k, r]) => `<button class="dirp" type="button" data-key="${esc(k)}"><span class="dp-a" aria-hidden="true">→</span><span><b>${L('往', 'To')} ${esc(nm(r.dest))}</b>${String(r.serviceType) !== '1' ? `<small>${L('特別班', 'Special')}</small>` : ''}</span></button>`;
+// 同一個終點有幾個方向（例如東鐵由羅湖／落馬洲往金鐘）：加註起點
+const dupDest = dirs => { const c = new Map(); for (const [, r] of dirs) c.set(nm(r.dest), (c.get(nm(r.dest)) || 0) + 1); return r => c.get(nm(r.dest)) > 1; };
+const dirPill = (dup) => ([k, r]) => `<button class="dirp" type="button" data-key="${esc(k)}"><span class="dp-a" aria-hidden="true">→</span><span><b>${L('往', 'To')} ${esc(nm(r.dest))}</b>${dup(r) ? `<small class="from">${L('由 ', 'from ')}${esc(nm(r.orig))}</small>` : ''}${String(r.serviceType) !== '1' ? `<small>${L('特別班', 'Special')}</small>` : ''}</span></button>`;
 function nearestRail(co){
   if (!S.here) return null;
   const n = stopsWithin(S.here, 3000).find(x => (S.IDX.get(x.id) || []).some(e => e.co === co));
@@ -93,7 +95,7 @@ function mtrPicker(){
     return `<section class="lcard${darkText(c) ? ' dark' : ''}" id="ln-${c}" style="--c:${lineColor(c)}">
       <header><span class="lc-code">${esc(S.set.lang === 'en' ? c : LINES[c][0].replace(/綫$/, ''))}</span><div class="lc-t"><h3>${esc(lineName(c))}</h3><p>${ends.map(esc).join(' ⇄ ')}</p></div><span class="lc-n"><b>${n}</b>${L('站', ' stns')}<small>${L('全程約 ', '~')}${endMin(main, 'mtr')}${L(' 分鐘', ' min')}</small></span></header>
       ${strip(main, 'mtr')}
-      <div class="lc-dirs">${dirs.map(dirPill).join('')}</div></section>`;
+      <div class="lc-dirs">${dirs.map(dirPill(dupDest(dirs))).join('')}</div></section>`;
   }).join('') + `</div>`;
 }
 function lrtPicker(){
@@ -105,7 +107,7 @@ function lrtPicker(){
     return `<section class="lcard lr" id="ln-${esc(n)}" style="--c:${lrtColor(n)}">
       <header>${lrtTiles(n)}<div class="lc-t"><h3>${esc(nm(main.orig))} ${circ ? '↻' : '⇄'} ${esc(nm(circ ? main.stops && {zh: stopName(st[Math.floor(st.length / 2)]), en: stopName(st[Math.floor(st.length / 2)])} : main.dest))}</h3><p>${st.length} ${L('個站 · 約 ', 'stops · ~')}${endMin(main, 'lightRail')}${L(' 分鐘', ' min')}${circ ? L(' · 循環綫', ' · circular') : ''}</p></div></header>
       ${strip(main, 'lightRail')}
-      <div class="lc-dirs">${dirs.map(dirPill).join('')}</div></section>`;
+      <div class="lc-dirs">${dirs.map(dirPill(dupDest(dirs))).join('')}</div></section>`;
   }).join('') + `</div>`;
 }
 function ferryPicker(){
@@ -232,7 +234,7 @@ export function openRoute(key, focusStop){
   pg.innerHTML = `<header class="pg-h${rail ? ' rail' + (dark ? ' dark' : '') : ''}"><button class="icon-btn" data-back type="button" aria-label="${L('返回', 'Back')}">${icon.back}</button>
       ${tilesFor(r)}<div class="pg-t"><b>${rail ? esc(title) : `${L('往', 'To')} ${esc(nm(r.dest))}`}</b><small>${rail ? `${L('往', 'To')} ${esc(nm(r.dest))} · ${stops.length} ${L('個站', 'stops')}` : `${L('由 ', 'From ')}${esc(nm(r.orig))} · ${r.co.map(coName).join(' + ')}`}</small></div></header>
     ${rail ? `<div class="rail-band"><div class="wrap">
-      <div class="rb-dirs" role="group" aria-label="${L('方向', 'Direction')}">${sibs.map(([k, x]) => `<button type="button" data-dir="${esc(k)}" aria-pressed="${k === key}"><small>${L('往', 'To')}</small>${esc(nm(x.dest))}</button>`).join('')}</div>
+      <div class="rb-dirs" role="group" aria-label="${L('方向', 'Direction')}">${(() => { const dup = dupDest(sibs); return sibs.map(([k, x]) => `<button type="button" data-dir="${esc(k)}" aria-pressed="${k === key}"><small>${dup(x) ? L(`由 ${esc(nm(x.orig))} 往`, `From ${esc(nm(x.orig))} to`) : L('往', 'To')}</small>${esc(nm(x.dest))}</button>`).join(''); })()}</div>
       <div class="rb-facts"><span><b>${stops.length}</b>${L(' 個站', ' stops')}</span><span><b>${endMin(r, co)}</b>${L(' 分鐘全程', ' min end to end')}</span>${si ? `<span><b>${si.first}</b>${L(' 首班', ' first')}</span><span><b>${si.last}</b>${L(' 尾班', ' last')}</span>` : ''}${si?.hw ? `<span><b>${si.hw}</b>${L(' 分鐘一班', ' min apart')}</span>` : ''}</div>
     </div></div>` : ''}
     <div class="wrap">

@@ -579,3 +579,4 @@ body.paged .trip-pill{top:auto;bottom:calc(84px + var(--sb));right:12px}
 .stops.rail .st-etas{gap:6px}
 .stops.rail .st-etas span{min-width:0;padding:6px 10px}
 .stops.rail .st-etas b{font-size:20px}
+.dirp small.from{color:#bdbdbd}
