@@ -218,6 +218,7 @@ function timed(url, opt = {}, ms = 6000){
 }
 async function alsSearch(q){
   const r = await timed('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=10', {headers: {Accept: 'application/json'}}, 10000);
+  if (!r.ok) throw new Error(String(r.status));
   const j = await r.json(), out = [];
   for (const s of j.SuggestedAddress || []) {
     const p = s.Address?.PremisesAddress || {}, c = p.ChiPremisesAddress || {}, e = p.EngPremisesAddress || {}, g = p.GeospatialInformation || {};
@@ -305,6 +306,8 @@ export async function searchPlaces(q, onPart){
   q = q.trim(); if (q.length < 2) return {list: [], failed: false};
   const qa = normAddr(q);
   let osm = [], als = [], fails = 0;
+  const stat = {als: '…', osm: '…'};
+  const why = e => e?.name === 'AbortError' ? L('逾時', 'timeout') : e?.message && /^\d+$/.test(e.message) ? 'HTTP ' + e.message : L('連唔到', 'unreachable');
   // 地址搵唔到完全吻合：再搵條村／條街本身，起碼可以揀到附近（例如「掃管笏村」）
   const base = /\d/.test(qa) ? qa.replace(/第?[一二三四五六七八九十]*區?\s*\d+[A-Za-z]?\s*號?\s*$/, '').replace(/\d+[A-Za-z]?\s*號?\s*$/, '').trim() : '';
   const alsAll = async () => {
@@ -314,10 +317,15 @@ export async function searchPlaces(q, onPart){
   };
   const step = () => onPart?.(rankPlaces(q, osm, als));
   await Promise.all([
-    alsAll().then(r => { als = r; step(); }, () => { fails++; }),
-    osmSearch(q).then(r => { osm = r; step(); }, () => { fails++; })
+    alsAll().then(r => { als = r; stat.als = r.length; step(); }, e => { fails++; stat.als = why(e); }),
+    osmSearch(q).then(r => { osm = r; stat.osm = r.length; step(); }, e => { fails++; stat.osm = why(e); })
   ]);
-  return {list: rankPlaces(q, osm, als), failed: fails === 2};
+  return {list: rankPlaces(q, osm, als), failed: fails === 2, stat};
+}
+// 鍵盤彈出時嘅可見範圍：俾彈出面板、建議清單跟住縮細，唔會俾鍵盤遮住
+if (window.visualViewport) {
+  const vvSet = () => { const v = window.visualViewport, st = document.documentElement.style; st.setProperty('--vvh', v.height + 'px'); st.setProperty('--vvt', v.offsetTop + 'px'); };
+  visualViewport.addEventListener('resize', vvSet); visualViewport.addEventListener('scroll', vvSet); vvSet();
 }
 // 一個全域監聽：撳出面就收埋所有建議清單（唔會每個搜尋框加一個）
 document.addEventListener('click', e => {
@@ -325,7 +333,7 @@ document.addEventListener('click', e => {
 });
 // 搜尋框 + 建議清單；onPick({lat,lng,label,kind})
 export function attachPicker(input, box, onPick, opt = {}){
-  let tq, seq = 0, list = [], placesFailed = false, pickWhenReady = false;
+  let tq, seq = 0, list = [], placesFailed = false, pickWhenReady = false, composing = false, lastStat = null, loadingPlaces = false;
   const draw = (alias, stops, plc, loading) => {
     const extra = [];
     if (opt.here && S.here) extra.push({kind: 'here', name: S.here.mode === 'manual' ? {zh: `目前地點：${S.here.label}`, en: `Current: ${S.here.label}`} : {zh: '你嘅位置（GPS）', en: 'Your location (GPS)'}, lat: S.here.lat, lng: S.here.lng});
@@ -343,33 +351,45 @@ export function attachPicker(input, box, onPick, opt = {}){
     const strong = plc.filter(x => x.ms <= 1), weak = plc.filter(x => x.ms > 1);
     const rail = top.filter(x => x.rail && x.score === 0), top2 = top.filter(x => !rail.includes(x));
     list = [...alias, ...rail, ...strong, ...top2, ...savedHit, ...weak, ...rest].slice(0, 14);
+    // 搜尋狀態（地址庫／地標各搵到幾多）：搵唔到地點或者有來源出錯先顯示
+    const statLine = !loading && lastStat && opt.places && (!plc.length || typeof lastStat.als !== 'number' || typeof lastStat.osm !== 'number')
+      ? `<div class="stat">${L('地址庫', 'Addresses')}：${esc(String(lastStat.als))} · ${L('地標', 'Landmarks')}：${esc(String(lastStat.osm))}</div>` : '';
     if (!list.length && !loading) {
-      box.innerHTML = q ? `<div class="empty"><b>${L(`搵唔到「${esc(q)}」`, `No results for “${esc(q)}”`)}</b><small>${placesFailed ? L('連唔到地點搜尋，請檢查網絡再試。', 'Place search is unreachable — check your connection.') : L('試下：大廈或屋苑名、街道同門牌（例如「彌敦道 700號」）、商場或者港鐵站名。', 'Try a building or estate name, a street and number, a mall or an MTR station.')}</small></div>` : '';
+      box.innerHTML = q ? `<div class="empty"><b>${L(`搵唔到「${esc(q)}」`, `No results for “${esc(q)}”`)}</b><small>${placesFailed ? L('連唔到地點搜尋，請檢查網絡再試。', 'Place search is unreachable — check your connection.') : L('試下：大廈或屋苑名、街道同門牌（例如「彌敦道 700號」）、商場或者港鐵站名。', 'Try a building or estate name, a street and number, a mall or an MTR station.')}</small></div>${statLine}` : '';
       box.classList.toggle('on', !!q); return;
     }
     box.innerHTML = list.map((x, i) => `<button type="button" role="option" data-i="${i}">
       <span class="k k-${x.kind}">${x.kind === 'place' ? icon.pin : x.kind === 'here' ? icon.gps : x.kind === 'saved' ? icon.star(true) : x.kind === 'alias' ? (x.station ? icon.rail : icon.landmark) : icon.bus}</span>
       <span class="nm">${esc(nm(x.name))}${x.sub ? `<small>${esc(nm(x.sub))}</small>` : ''}</span>
-      ${x.cos ? [...x.cos].slice(0, 2).map(coTag).join(' ') : ''}</button>`).join('') + (loading ? `<div class="empty">${L('搵緊地方…', 'Searching places…')}</div>` : '');
+      ${x.cos ? [...x.cos].slice(0, 2).map(coTag).join(' ') : ''}</button>`).join('') + (loading ? `<div class="empty">${L('搵緊地方…', 'Searching places…')}</div>` : statLine);
     box.classList.add('on');
   };
-  input.addEventListener('input', () => {
-    clearTimeout(tq); pickWhenReady = false;
+  // 中文輸入法（倉頡、速成、拼音、手寫）揀緊字時唔好搜尋半成品，揀完先搜
+  input.addEventListener('compositionstart', () => { composing = true; });
+  input.addEventListener('compositionend', () => { composing = false; run(); });
+  input.addEventListener('input', e => { if (e.isComposing || composing) return; run(); });
+  function run(){
+    clearTimeout(tq); pickWhenReady = false; lastStat = null;
     const q = input.value, my = ++seq, al = aliasOf(q);
     const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', station: true, name: {zh: al.zh, en: al.en}, sub: {zh: '港鐵站', en: 'MTR station'}, ...S.DB.stopList[al.code].location}]
       : al?.pt ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, sub: {zh: '地標', en: 'Landmark'}, lat: al.pt[0], lng: al.pt[1]}] : [];
     const stops = searchStops(al?.q || q, 10);
     const wantPlaces = opt.places && (al?.q || q).trim().length >= 2;
+    loadingPlaces = wantPlaces;
     draw(alias, stops, [], wantPlaces);
     placesFailed = false;
     if (wantPlaces) tq = setTimeout(async () => {
       const p = await searchPlaces(al?.q || q, part => { if (my === seq && part.length) draw(alias, stops, part, true); });
-      if (my !== seq) return; placesFailed = p.failed; draw(alias, stops, p.list, false);
+      if (my !== seq) return; placesFailed = p.failed; lastStat = p.stat; loadingPlaces = false; draw(alias, stops, p.list, false);
       if (pickWhenReady) { pickWhenReady = false; const b = [...box.querySelectorAll('button[data-i]')].find(b => list[+b.dataset.i]?.kind === 'place') || box.querySelector('button[data-i]'); b?.click(); }
     }, 300);
-  });
+  }
   let picked = false;
-  input.addEventListener('focus', () => { picked = false; if (!input.value) draw([], [], [], false); else input.select?.(); });
+  input.addEventListener('focus', () => {
+    picked = false; if (!input.value) draw([], [], [], false); else input.select?.();
+    // 手機：鍵盤彈出後將搜尋框推上去，下面有位顯示結果
+    setTimeout(() => { const vv = window.visualViewport; if (vv && vv.height < innerHeight * 0.8 && !input.closest('.sheet')) input.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 350);
+  });
   // 打咗字但冇揀建議就離開：還原返而家用緊嘅地點名，免得畫面顯示 A、實際計緊 B
   if (opt.current) input.addEventListener('blur', () => setTimeout(() => {
     if (picked || document.activeElement === input) return;
@@ -381,8 +401,9 @@ export function attachPicker(input, box, onPick, opt = {}){
     if (e.key === 'Escape') box.classList.remove('on');
     if (e.key !== 'Enter' || e.isComposing) return;              // 中文輸入法揀字嗰下唔當確認
     e.preventDefault();
-    // 地址仲搵緊：等結果返嚟先揀，唔好揀咗個唔相關嘅巴士站
-    if (box.innerText.includes(L('搵緊地方', 'Searching places')) && /\d|號|村|街|道|路/.test(input.value)) { pickWhenReady = true; return; }
+    // 撳鍵盤「搜尋」時地點仲搵緊：等結果返嚟先揀第一個地點，唔好即刻揀咗個唔相關嘅巴士站（iPhone 用家好慣撳呢個掣）
+    if (composing) return;
+    if (loadingPlaces) { pickWhenReady = true; return; }
     box.querySelector('button[data-i]')?.click();
   });
   box.addEventListener('click', e => {
