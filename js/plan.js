@@ -1,5 +1,5 @@
 // 港途 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
-import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, rideMin, cumTimes, avgWait, runningNow, legFare, money, stopLoc, stopName,
+import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, rideMin, cumTimes, avgWait, runningNow, legFare, mtrFare, money, stopLoc, stopName,
   hhmm, mins, now, toast, nextDepAfter, isMtrStation, tilesFor, routeLabel, routeTiles, lineTiles, coName, lineName, icon} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {attachPicker, go, on} from './ui.js';
@@ -7,7 +7,15 @@ import {startTrip} from './trip.js';
 
 const R_END = 600, R_XFER = 320, MAX_RIDES = 4;
 const xferCache = new Map();
-const xferStops = id => { if (!xferCache.has(id)) { const p = stopLoc(id); xferCache.set(id, p ? stopsWithin(p, R_XFER).filter(x => S.IDX.has(x.id)).slice(0, 16) : []); } return xferCache.get(id); };
+// 轉車可以行去嘅站：最近 16 個，另外範圍內所有港鐵／輕鐵站一定計（巴士總站附近站多，唔好擠走鐵路站）
+const isRail = id => (S.IDX.get(id) || []).some(e => e.co === 'mtr' || e.co === 'lightRail');
+const xferStops = id => {
+  if (!xferCache.has(id)) {
+    const p = stopLoc(id), all = p ? stopsWithin(p, R_XFER).filter(x => S.IDX.has(x.id)) : [];
+    xferCache.set(id, [...all.slice(0, 16), ...all.slice(16).filter(x => isRail(x.id))]);
+  }
+  return xferCache.get(id);
+};
 const rt = key => S.DB.routeList[key];
 // 步行時間：入出港鐵站要多行幾分鐘（大堂、扶手電梯、出口）
 const endWalk = (id, d) => walkMin(d) + (isMtrStation(id) ? 2 : 0);
@@ -157,12 +165,26 @@ async function refine(o, memo, at){
   o.arriveT = t + o.walkEnd * 60000;
   o.leaveT = o.legs.length ? o.times[0].boardT - o.walk0 * 60000 : t0;
   let fare = 0, unknown = false;
-  for (const l of o.legs) { const f = legFare(rt(l.key), l.co, l.bseq, l.aseq); if (f == null) unknown = true; else fare += f; }
+  for (const g of fareGroups(o.legs)) { if (g.f == null) unknown = true; else fare += g.f; }
   o.fare = fare; o.fareUnknown = unknown;
   o.walkSum = o.walk0 + o.walkEnd + o.legs.reduce((a, l) => a + (l.walk || 0), 0);
   return o;
 }
 
+// 車費分組：連續幾程港鐵（站內轉綫，唔使出閘）只收一次，由第一個站計到最後一個站
+export function fareGroups(legs){
+  const out = [];
+  for (let i = 0; i < legs.length; i++) {
+    const l = legs[i];
+    if (l.co === 'mtr') {
+      let j = i; while (j + 1 < legs.length && legs[j + 1].co === 'mtr' && legs[j + 1].board === legs[j].alight) j++;
+      const a = rt(legs[i].key).stops.mtr[legs[i].bseq], b = rt(legs[j].key).stops.mtr[legs[j].aseq];
+      out.push({from: i, to: j, f: mtrFare(a, b)}); i = j; continue;
+    }
+    out.push({from: i, to: i, f: legFare(rt(l.key), l.co, l.bseq, l.aseq)});
+  }
+  return out;
+}
 const SORTS = {
   fast: (a, b) => a.arriveT - b.arriveT || a.legs.length - b.legs.length || (a.unsure - b.unsure),
   cheap: (a, b) => (a.fareUnknown - b.fareUnknown) || (a.fare - b.fare) || a.arriveT - b.arriveT,
@@ -203,8 +225,12 @@ function tidy(list){
     if (!g) groups.set(key, o);
     out.push(o);
   }
-  // 2) 有另一個方案轉少啲車、行多唔夠 6 分鐘、遲唔夠 2 分鐘到：呢個方案冇意思
-  return out.filter(b => !out.some(a => a !== b && a.legs.length < b.legs.length && !a.walkOnly
+  // 2) 比最快方案遲好多先到（多過 35 分鐘或者成程時間嘅 60%）：唔要
+  const best = Math.min(...out.map(o => o.arriveT)), t0 = Math.min(...out.map(o => o.leaveT));
+  const slack = Math.max(35 * 60000, (best - t0) * 0.6);
+  const ok = out.filter(o => o.arriveT - best <= slack);
+  // 3) 有另一個方案轉少啲車、行多唔夠 6 分鐘、遲唔夠 2 分鐘到：呢個方案冇意思
+  return ok.filter(b => !ok.some(a => a !== b && a.legs.length < b.legs.length && !a.walkOnly
     && a.arriveT <= b.arriveT + 2 * 60000 && a.walkSum <= b.walkSum + 6 && (b.fareUnknown || a.fareUnknown || a.fare <= b.fare + 4)));
 }
 export const toTrip = (o, from, to) => ({from, to, walk0: o.walk0, walkEnd: o.walkEnd, legs: o.legs.map(l => ({key: l.key, co: l.co, board: l.board, bseq: l.bseq, alight: l.alight, aseq: l.aseq, walk: l.walk || 0}))});
@@ -308,13 +334,14 @@ export function legChips(o){
 }
 export function steps(o){
   if (o.walkOnly) return `<li><b>${hhmm(o.leaveT)}</b> ${L(`直接行過去，約 ${o.walk0} 分鐘`, `Walk there, about ${o.walk0} min`)}</li>`;
-  const out = [];
+  const out = [], fg = new Map();
+  for (const g of fareGroups(o.legs)) for (let k = g.from; k <= g.to; k++) fg.set(k, k === g.from ? (g.f != null ? ' · ' + money(g.f) + (g.to > g.from ? L('（港鐵全程）', ' (whole MTR trip)') : '') : '') : ' · ' + L('站內轉綫，唔使再俾錢', 'in-station change, no extra fare'));
   o.legs.forEach((l, i) => {
     const r = rt(l.key), tm = o.times[i], nStops = l.aseq - l.bseq, ride = Math.round(rideMin(r, l.co, l.bseq, l.aseq));
     const name = routeLabel(r);
     if (i === 0) out.push(`<li><b>${hhmm(o.leaveT)}</b> ${L(`出門，行 ${o.walk0} 分鐘去 ${esc(stopName(l.board))}`, `Leave, walk ${o.walk0} min to ${esc(stopName(l.board))}`)}</li>`);
     else out.push(`<li><b>${hhmm(o.times[i - 1].alightT)}</b> ${l.walk ? L(`行 ${l.walk} 分鐘去 ${esc(stopName(l.board))} 轉車`, `Walk ${l.walk} min to ${esc(stopName(l.board))}`) : L(`喺 ${esc(stopName(l.board))} 轉車`, `Change at ${esc(stopName(l.board))}`)}</li>`);
-    out.push(`<li class="ride"><b class="${tm.live ? 'live' : ''}">${hhmm(tm.boardT)}</b> ${L(`搭 ${esc(name)} 往 ${esc(nm(r.dest))}`, `Take ${esc(name)} towards ${esc(nm(r.dest))}`)}<small>${coName(l.co)} · ${L(`坐 ${nStops} 個站，約 ${ride} 分鐘`, `${nStops} stops, ~${ride} min`)}${(() => { const f = legFare(r, l.co, l.bseq, l.aseq); return f != null ? ' · ' + money(f) : ''; })()}${tm.live ? '' : ' · ' + L('時間表／估計班次', 'scheduled / estimated')}${l.alt?.length ? '<br>' + L(`${esc(l.alt.join('、'))} 都得，邊班先到搭邊班`, `${esc(l.alt.join(', '))} also work — take whichever comes first`) : ''}</small></li>`);
+    out.push(`<li class="ride"><b class="${tm.live ? 'live' : ''}">${hhmm(tm.boardT)}</b> ${L(`搭 ${esc(name)} 往 ${esc(nm(r.dest))}`, `Take ${esc(name)} towards ${esc(nm(r.dest))}`)}<small>${coName(l.co)} · ${L(`坐 ${nStops} 個站，約 ${ride} 分鐘`, `${nStops} stops, ~${ride} min`)}${fg.get(i) || ''}${tm.live ? '' : ' · ' + L('時間表／估計班次', 'scheduled / estimated')}${l.alt?.length ? '<br>' + L(`${esc(l.alt.join('、'))} 都得，邊班先到搭邊班`, `${esc(l.alt.join(', '))} also work — take whichever comes first`) : ''}</small></li>`);
     out.push(`<li><b>${hhmm(tm.alightT)}</b> ${L(`喺 ${esc(stopName(l.alight))} 落車`, `Get off at ${esc(stopName(l.alight))}`)}</li>`);
   });
   out.push(`<li class="end"><b>${hhmm(o.arriveT)}</b> ${o.walkEnd ? L(`行 ${o.walkEnd} 分鐘到目的地`, `Walk ${o.walkEnd} min to destination`) : L('到達', 'Arrive')}</li>`);
