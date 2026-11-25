@@ -17,11 +17,22 @@ export function initRoute(){
   const v = $('v-route');
   v.innerHTML = `<div class="wrap">
     <div class="chips" id="rFilt">${FILTERS.map(([k, zh, en]) => `<button class="chip" type="button" data-f="${k}">${L(zh, en)}</button>`).join('')}</div>
-    <div class="rq" id="rq"><div class="rq-disp" id="rqDisp" aria-live="polite"></div><button class="btn-d sm" id="rqClr" type="button">${L('清除', 'Clear')}</button></div>
+    <div class="rq" id="rq"><div class="rq-disp" id="rqDisp" aria-live="polite"></div><button class="btn-d sm rq-show" id="rqKb" type="button">${L('鍵盤', 'Keypad')}</button><button class="btn-d sm" id="rqClr" type="button">${L('清除', 'Clear')}</button></div>
     <div id="rList" class="rlist"></div></div>
     <div class="keypad" id="keypad" aria-label="${L('路線鍵盤', 'Route keypad')}"><div class="kp-num"></div><div class="kp-let"></div></div>`;
   $('rFilt').onclick = e => { const b = e.target.closest('[data-f]'); if (!b) return; filt = b.dataset.f; draw(); window.scrollTo(0, 0); };
-  $('rqClr').onclick = () => { q = ''; draw(); };
+  $('rqClr').onclick = () => { q = ''; showKp(); draw(); };
+  // 鍵盤收埋／再出現：碌落去睇長清單時唔好遮住一半畫面
+  const showKp = () => v.classList.remove('kp-hide');
+  $('rqKb').onclick = showKp; $('rqDisp').onclick = showKp;
+  let lastY = 0;
+  window.addEventListener('scroll', () => {
+    if (v.hidden) return;
+    const y = window.scrollY;
+    if (y > 40 && y > lastY + 4) v.classList.add('kp-hide');
+    else if (y < 12) showKp();
+    lastY = y;
+  }, {passive: true});
   $('keypad').onclick = e => {
     const b = e.target.closest('button[data-k]'); if (!b || b.disabled) return;
     const k = b.dataset.k;
