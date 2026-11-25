@@ -9,6 +9,9 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 // 目的地名：括號部分唔好拆開兩行（例如「中環(交易廣場)」唔會剩低「場)」喺第二行）
 // 只限短括號（6 個字以內）；長嘅照常換行，免得撐爆格仔
 export const destHtml = s => esc(s).replace(/([(（][^()（）]{1,6}[)）])$/, '<span class="nw">$1</span>');
+// App 版本：每次發佈都要同 sw.js 嘅 'hkgo-shell-vNN' 一齊加 1（舊版手機靠呢個數字發現有新版）
+export const APP_VER = 23;
+
 // 本機儲存；有登入帳戶嘅話，onChange 會通知 account.js 同步去雲端
 export const store = {
   onChange: null,

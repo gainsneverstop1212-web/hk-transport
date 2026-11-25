@@ -1,5 +1,5 @@
 // 港住走 · 開機
-import {S, $, esc, store, L, loadDb, buildIndex, flaps, saveSettings, now, syncClockNow, applyTextSize} from './core.js';
+import {S, $, esc, store, L, toast, APP_VER, loadDb, buildIndex, flaps, saveSettings, now, syncClockNow, applyTextSize} from './core.js';
 import {go, setHere, startGps, on} from './ui.js';
 import {initNearby} from './nearby.js';
 import {initRoute} from './route.js';
@@ -78,4 +78,26 @@ async function boot(){
   window.addEventListener('offline', () => { S.online = false; });
 }
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+/* ---------- 自動更新：iPhone 加咗去主畫面嘅 app 唔會自己重新載入，會一直用舊版 ---------- */
+// 返嚟 app（或者開 app 3 秒後）就睇下網上有冇新版本；有就即刻換（出門倒數進行中或者打緊字就等陣先）
+let verAt = 0;
+export async function checkUpdate(manual){
+  if (window.HKGO_BUNDLED || location.protocol !== 'https:') { if (manual) toast(L('呢個版本唔使檢查', 'Not applicable here')); return false; }
+  if (!manual && Date.now() - verAt < 300000) return false;
+  verAt = Date.now();
+  try {
+    const txt = await fetch('sw.js?v=' + Date.now(), {cache: 'no-store'}).then(r => r.text());
+    const live = +(/hkgo-shell-v(\d+)/.exec(txt) || [])[1];
+    if (!live || live <= APP_VER) { if (manual) toast(L(`已經係最新版本（${APP_VER}）`, `Up to date (v${APP_VER})`)); return false; }
+    const reg = await navigator.serviceWorker?.getRegistration?.(); await reg?.update?.().catch(() => {});
+    const busy = store.get('trip', null) || ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+    if (busy && !manual) { toast(L('有新版本，完成之後會自動更新', 'Update ready — will apply when you’re done'), 4000); verAt = 0; return true; }
+    toast(L(`更新緊到最新版本（${live}）…`, `Updating to v${live}…`), 2000);
+    setTimeout(() => location.reload(), 600);
+    return true;
+  } catch { if (manual) toast(L('檢查唔到，請檢查網絡', 'Could not check — check connection')); return false; }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+setTimeout(() => checkUpdate(), 3000);
 boot();

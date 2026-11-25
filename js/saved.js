@@ -1,5 +1,5 @@
 // 港住走 · 常用：智能主頁、常用地點、收藏路線、設定
-import {S, $, esc, store, L, nm, liftTime, isLiftPeak, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast, applyTextSize} from './core.js';
+import {S, $, esc, store, L, nm, liftTime, isLiftPeak, APP_VER, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast, applyTextSize} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPicker} from './ui.js';
 import {planTrip, toTrip, legChips, planTo} from './plan.js';
@@ -129,6 +129,7 @@ function drawSettings(){
     <div class="set-r"><span>${L('自動學識通勤習慣', 'Learn my commute')}<small class="set-s">${L('用出門倒數 3 日或以上，就會喺平時出門前自動出建議。紀錄只存喺呢部機。', 'After 3+ days of countdowns, suggests your usual trip automatically. Stored on this device only.')}</small>${learned().map(g => `<small class="set-s habit-l">· ${esc(describe(g))}</small>`).join('')}</span><div class="sh-inline"><div class="seg">${[['on', '開', 'On'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="learn" data-v="${v}" aria-pressed="${S.set.learn === v}">${L(zh, en)}</button>`).join('')}</div><button class="btn-d sm" data-a="forget" type="button">${L('清除紀錄', 'Clear')}</button></div></div>
     <div class="set-r"><span>${L('螢幕常亮（出門倒數時）', 'Keep screen on (countdown)')}<small class="set-s">${L('等車同搭車先開，電量低過 20% 自動停', 'Only while waiting or riding; pauses under 20% battery')}</small></span><div class="seg">${[['auto', '自動', 'Auto'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="awake" data-v="${v}" aria-pressed="${S.set.awake === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('自動更新路線資料（約 8 MB）', 'Auto-update route data (~8 MB)')}<small class="set-s">${L('上次更新：', 'Last updated: ')}${store.get('dbTime', 0) ? new Date(store.get('dbTime', 0)).toLocaleDateString('zh-HK', {timeZone: 'Asia/Hong_Kong'}) + ' ' + hhmm(store.get('dbTime', 0)) : '—'}${S.set.data === 'wifi' && !('connection' in navigator) ? L(' · 呢部機分唔到 Wi-Fi，會照常更新', ' · this device can’t tell Wi-Fi apart') : ''}</small></span><div class="seg">${[['auto', '每日', 'Daily'], ['wifi', '只限 Wi-Fi', 'Wi-Fi only'], ['manual', '手動', 'Manual']].map(([v, zh, en]) => `<button type="button" data-a="data" data-v="${v}" aria-pressed="${S.set.data === v}">${L(zh, en)}</button>`).join('')}</div></div>
+    <div class="set-r"><span>${L('App 版本', 'App version')}<small class="set-s">${L(`而家用緊第 ${APP_VER} 版`, `You’re on v${APP_VER}`)}</small></span><button class="btn-d sm" data-a="ver" type="button">${L('檢查更新', 'Check for update')}</button></div>
     <div class="set-r"><span>${L('路線資料', 'Route data')}</span><div class="sh-inline"><button class="btn-d sm" data-a="upd" type="button">${L('而家更新', 'Update now')}</button><button class="btn-d sm" data-a="clear" type="button">${L('清除重下載', 'Reset')}</button></div></div>
     <p class="hint">${L('裝喺主畫面用效果最好：iPhone 用 Safari 撳「分享」→「加至主畫面」。通知、落車提示同螢幕常亮，只喺 app 開住嗰陣有效。', 'Best installed: in Safari tap Share → Add to Home Screen. Alerts and keep-awake work while the app is open.')} ${L('iPhone 鎖咗機唔會響提示，可以喺倒數畫面撳「加入行事曆提醒」。', 'iPhone won’t alert while locked — use “Add calendar alarms” on the countdown.')}</p>`;
 }
@@ -194,6 +195,7 @@ function onClick(e){
   else if (a === 'walk') { S.set.walk = +b.dataset.v; saveSettings(); drawSettings(); toast(L('已更新步速', 'Pace updated')); }
   else if (a === 'notif') { if ('Notification' in window) Notification.requestPermission().then(() => drawSettings()); }
   else if (a === 'clear') { clearData().then(() => location.reload()); }
+  else if (a === 'ver') { import('./app.js').then(m => m.checkUpdate(true)); }
   else if (a === 'doorMode') { S.set.doorMode = b.dataset.v; saveSettings(); smartAt = 0; drawSettings(); }
   else if (a === 'lift') { const p = places[k]; if (p) { p.lift = b.dataset.v === 'true'; savePlaces(); } }
   else if (a === 'door') { S.set.door = +b.dataset.v; saveSettings(); smartAt = 0; drawSettings(); toast(L('已更新出門預留時間', 'Updated')); }
