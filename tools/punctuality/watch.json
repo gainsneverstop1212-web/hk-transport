@@ -1,0 +1,7 @@
+{
+  "_說明": "要記錄嘅車站同路線。co: kmb 或 ctb；stop: 車站 ID（九巴 16 位、城巴 6 位）；dir: O 去程 / I 回程；st: 九巴 service_type（通常 1）。可以喺 https://data.etabus.gov.hk/v1/transport/kmb/route-stop/{路線}/outbound/1 查九巴車站 ID。建議放你自己每日搭嘅路線同上車站。",
+  "watch": [
+    {"co": "kmb", "route": "1A", "dir": "O", "st": 1, "stop": "CC811B604DD883AE", "name": "九巴 1A（去程）第 13 站"},
+    {"co": "kmb", "route": "1A", "dir": "O", "st": 1, "stop": "904DEAF7441E3BB8", "name": "九巴 1A（去程）第 19 站"}
+  ]
+}

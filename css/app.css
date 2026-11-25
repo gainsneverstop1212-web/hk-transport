@@ -621,3 +621,45 @@ body.bigtext .steps li,body.bigtext .news h3,body.bigtext .trip-lines p{font-siz
 body.bigtext .chip,body.bigtext .seg button,body.bigtext .btn-y,body.bigtext .btn-d{font-size:calc(16px * var(--zoom,1))}
 body.bigtext .tabs button{font-size:calc(13px * var(--zoom,1))}
 body.bigtext .star{width:48px;height:48px}
+
+/* ---------- 出門助手：天氣、學識咗嘅通勤、路線出事、分享、轉車 ---------- */
+.wx{display:flex;align-items:flex-start;gap:8px;margin:6px 0;padding:8px 10px;background:#1b2530;border-left:4px solid #4aa3df;color:#e6f0f8;font-size:15px;line-height:1.4}
+.wx svg{flex:none;margin-top:1px}
+.wx-amber{background:#2c2410;border-color:var(--yellow);color:#fff3cc}
+.wx-red,.wx-black,.wx-tc8{background:#2e1513;border-color:var(--red);color:#ffe1de}
+.trip-lines .wx{display:inline-flex;margin:0}
+.habit-tag{display:inline-block;margin-left:6px;padding:1px 7px;background:var(--yellow);color:var(--ink);font:700 12px/1.6 var(--body);letter-spacing:.02em;vertical-align:middle}
+.habit-l{color:#cfcfcf}
+.alert-bar{display:grid;gap:8px;padding-top:10px}
+.alert-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:start;background:#2e1513;border-left:4px solid var(--red);padding:10px 12px}
+.al-i{grid-row:span 2;display:grid;place-items:center;width:26px;height:26px;background:var(--red);color:#111;font:800 18px/1 var(--disp)}
+.al-t b{display:block;font-size:16px}
+.al-t small{display:block;color:#f0cfcb;font-size:14px;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.al-b{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.al-x{margin-left:auto;width:38px;height:38px;color:#f0cfcb;background:none;border:0;font-size:18px}
+.al-more{margin:0;color:var(--grey);font-size:13px}
+.share-prev{margin:0;padding:12px;background:#222;border-left:4px solid #25d366;font-size:16px;line-height:1.5}
+.trip-lines b.late{color:var(--red)}
+.trip-lines b.go{color:#3ad16b}
+@media (max-width:360px){.al-b .btn-y.sm,.al-b .btn-d.sm{padding:0 10px;font-size:14px}}
+.smart p.wx{color:#e6f0f8;margin:8px 0}
+.smart p.wx-amber{color:#fff3cc}
+.smart p.wx-red,.smart p.wx-black,.smart p.wx-tc8{color:#ffe1de}
+/* 地圖：一隻手指拖動（唔好碌咗成個頁面）、兩隻手指縮放；Leaflet CSS 未載入前都生效 */
+.bigmap,.rmap,.pmap,.leaflet-container{touch-action:none;overscroll-behavior:contain;-webkit-user-select:none;user-select:none}
+.map-me{display:grid;place-items:center;width:40px;height:40px;background:#1f1f1f;color:#ffc917;border:1px solid #333;cursor:pointer}
+.lc.door{color:#cfcfcf}
+/* 規劃頁：一撳就計、最近去過、落樓字粒、方案提示 */
+.qk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.qk-list{display:grid;gap:6px}
+.qk{display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 12px;background:#1b1b1b;border:1px solid #333;color:#eee;text-align:left;font:inherit;cursor:pointer}
+.qk:active{background:#262626}
+.qk.rec{min-height:46px;background:none;border-color:#2a2a2a}
+.qk svg{flex:none;color:var(--grey)}
+.qk-i{flex:none;display:grid;place-items:center;width:30px;height:30px;background:var(--yellow);color:var(--ink);font-weight:800}
+.qk-t{display:grid;min-width:0}
+.qk-t b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qk-t small{color:var(--grey);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sec .sec-x{float:right;margin-top:-4px}
+.lc.door b{font:700 12px/1 var(--body);color:var(--ink);background:#cfcfcf;padding:2px 4px;margin-right:3px}
+.opt-note{margin:8px 0 0}

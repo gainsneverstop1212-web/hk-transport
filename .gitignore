@@ -1,3 +1,5 @@
 www/
 node_modules/
 .DS_Store
+tools/punctuality/raw/
+tools/punctuality/summary.json

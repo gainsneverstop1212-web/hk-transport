@@ -11,14 +11,18 @@ export function initNews(){
   $('newsQ').oninput = e => { q = e.target.value.trim().toLowerCase(); draw(); };
   on('tab', t => { if (t === 'news' && Date.now() - at > 120000) load(); });
 }
+// 運輸署特別交通消息（路線出事通知都用呢個）
+export async function fetchNews(){
+  const x = await fetch(`https://resource.data.one.gov.hk/td/${S.set.lang === 'en' ? 'en' : 'tc'}/specialtrafficnews.xml`, {cache: 'no-store'}).then(r => r.text());
+  const d = new DOMParser().parseFromString(x, 'text/xml');
+  const g = (m, t) => m.getElementsByTagName(t)[0]?.textContent?.trim() || '';
+  return [...d.getElementsByTagName('message')].map(m => ({id: g(m, 'msgID'), text: S.set.lang === 'en' ? g(m, 'EngText') : g(m, 'ChinText'), date: g(m, 'ReferenceDate')}))
+    .filter(x => x.text);
+}
 async function load(){
   at = Date.now();
   try {
-    const x = await fetch(`https://resource.data.one.gov.hk/td/${S.set.lang === 'en' ? 'en' : 'tc'}/specialtrafficnews.xml`, {cache: 'no-store'}).then(r => r.text());
-    const d = new DOMParser().parseFromString(x, 'text/xml');
-    const g = (m, t) => m.getElementsByTagName(t)[0]?.textContent?.trim() || '';
-    items = [...d.getElementsByTagName('message')].map(m => ({id: g(m, 'msgID'), text: S.set.lang === 'en' ? g(m, 'EngText') : g(m, 'ChinText'), date: g(m, 'ReferenceDate')}))
-      .filter(x => x.text);
+    items = await fetchNews();
   } catch { items = items || []; if (!items.length) $('newsL').innerHTML = `<p class="hint">${L('暫時載入唔到交通消息', 'Could not load traffic news')}</p><button class="btn-d sm" type="button" id="newsRetry">${L('再試', 'Retry')}</button>`; $('newsRetry')?.addEventListener('click', load); return; }
   draw();
 }
@@ -31,7 +35,9 @@ function mine(){
   }
   return [...out];
 }
-const hits = (text, keys) => keys.some(k => /^[0-9A-Z]+$/.test(k) ? new RegExp(`(^|[^0-9A-Z])${k}([^0-9A-Z]|$)`, 'i').test(text) : text.includes(k));
+// 巴士號碼要有上文下理先算（「第1A號線」、「1A、2及6號線」、「Routes 1A and 2」），免得日期、時間入面嘅數字當咗係路線
+export const hitsRoute = (text, k) => new RegExp(`(^|第|路線|號線|routes?\\s*|、|及|和|與|,\\s*|and\\s+)${k}(號|線|、|及|和|與|,|\\s|$)`, 'i').test(text);
+export const hits = (text, keys) => keys.some(k => /^[0-9A-Z]+$/.test(k) ? hitsRoute(text, k) : text.includes(k));
 function draw(){
   if (!items) return;
   const keys = mine();

@@ -19,8 +19,8 @@ export const store = {
 export const S = {
   DB: null, IDX: new Map(), GRID: new Map(), NUMS: new Map(),
   here: null,
-  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto', text: 'normal'}, store.get('settings', {})),
-  online: true, lastOk: 0, skew: store.get('skew', 0)
+  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto', text: 'normal', learn: 'on', door: 3}, store.get('settings', {})),
+  online: true, lastOk: 0, skew: store.get('skew', 0), wx: null
 };
 // 用伺服器時間校正手機時鐘（手機時間唔準都唔會倒數錯）；上次校正值會記低，開 app 第一秒已經準
 export const now = () => Date.now() + S.skew;
@@ -177,7 +177,10 @@ export function dist(a, b){
   const x = (b.lng - a.lng) * r * Math.cos((a.lat + b.lat) / 2 * r), y = (b.lat - a.lat) * r;
   return Math.sqrt(x * x + y * y) * R;
 }
-export const walkMin = m => Math.max(1, Math.ceil(m * 1.35 / (S.set.walk || 75)));
+// 天氣（落雨、黃雨、紅雨、風球）會令步行慢啲：S.wx.factor 由 wx.js 按天文台資料設定
+export const walkMin = m => Math.max(1, Math.ceil(m * 1.35 / (S.set.walk || 75) * (S.wx?.factor || 1)));
+// 出門預留（落樓 + 等𨋢）：由屋企／公司出發先計；由車站或者港鐵站出發就唔使
+export const doorMin = from => !from || from.kind === 'stop' || from.noDoor ? 0 : (S.set.door ?? 3);
 export const inHK = p => p.lat > HK.s && p.lat < HK.n && p.lng > HK.w && p.lng < HK.e;
 export const stopLoc = id => S.DB.stopList[id]?.location;
 export const stopName = id => nm(S.DB.stopList[id]?.name);
@@ -341,12 +344,12 @@ export function speak(text){
     speechSynthesis.speak(u);
   } catch {}
 }
-export async function notify(title, body){
+export async function notify(title, body, tag = 'hkgo-trip'){
   try { navigator.vibrate?.([300, 120, 300]); } catch {}
   try {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     const reg = await navigator.serviceWorker?.getRegistration?.();
-    if (reg) reg.showNotification(title, {body, icon: 'icon-192.png', tag: 'hkgo-trip', renotify: true});
+    if (reg) reg.showNotification(title, {body, icon: 'icon-192.png', tag, renotify: true});
     else new Notification(title, {body, icon: 'icon-192.png'});
   } catch {}
 }
@@ -366,5 +369,10 @@ export const icon = {
   sun: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2"/></svg>',
   moon: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
   bell: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
+  lift: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 9l3-3 3 3M9 15l3 3 3-3" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>',
+  landmark: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>',
+  rail: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 11h14M8 21l2-4M16 21l-2-4" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="14" r="1" fill="currentColor"/><circle cx="15" cy="14" r="1" fill="currentColor"/></svg>',
+  clock: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+  share: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.6" fill="currentColor"/><circle cx="6" cy="12" r="2.6" fill="currentColor"/><circle cx="18" cy="19" r="2.6" fill="currentColor"/><path d="M8.3 10.8l7.4-4.2M8.3 13.2l7.4 4.2" stroke="currentColor" stroke-width="2"/></svg>',
   search: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="2.4" fill="none"/><path d="m15 15 6 6" stroke="currentColor" stroke-width="2.4"/></svg>'
 };

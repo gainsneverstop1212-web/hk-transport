@@ -7,27 +7,66 @@ export const emit = (n, d) => bus.dispatchEvent(new CustomEvent(n, {detail: d}))
 export const on = (n, f) => bus.addEventListener(n, e => f(e.detail));
 
 /* ---------- 位置 ---------- */
-let watchId = null;
+let watchId = null, roughT = null, retryT = null;
 export function setHere(p){
   S.here = p;
   if (p.mode === 'manual') store.set('place', {lat: p.lat, lng: p.lng, label: p.label});
   emit('here', p);
 }
-export function stopGps(){ if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; } emit('gps', 'off'); }
+export function stopGps(){
+  if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+  clearTimeout(roughT); clearTimeout(retryT); roughT = retryT = null;
+  emit('gps', 'off');
+}
 export function gpsOn(){ return watchId != null; }
+// 定位策略（解決「開咗定位都唔準」）：
+// · 手機頭一兩秒通常只係用 Wi-Fi／電話網絡估個大概（誤差幾百米）：太粗略嘅位置先等幾秒，等 GPS 收到衛星
+// · 新位置要準過而家嗰個，或者真係行咗一段路，先會取代；唔會俾一個 Wi-Fi 估算蓋過準確嘅 GPS 位置
+// · 室內、港鐵站 GPS 慢：timeout 唔會停定位，會繼續等
+// · 唔用舊位置（maximumAge: 0）
+const ROUGH = 150, WAIT_ROUGH = 6000;
 export function startGps(){
   if (!('geolocation' in navigator)) { toast(L('呢部機唔支援定位', 'Location not supported')); return; }
   stopGps(); emit('gps', 'busy');
-  let first = true;
-  watchId = navigator.geolocation.watchPosition(pos => {
-    const p = {lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, label: L('你嘅位置', 'Your location'), mode: 'gps'};
+  let pending = null, lastFix = 0;
+  const use = p => { clearTimeout(roughT); roughT = null; pending = null; setHere(p); store.set('gpsUsed', true); };
+  const onPos = pos => {
+    const c = pos.coords;
+    const p = {lat: c.latitude, lng: c.longitude, acc: c.accuracy, at: pos.timestamp || Date.now(), label: L('你嘅位置', 'Your location'), mode: 'gps'};
+    lastFix = Date.now();
     S.gpsFix = p; emit('fix', p);
     if (!inHK(p)) { stopGps(); emit('gps', 'outside'); return; }
-    emit('gps', 'on');
-    if (first || !S.here || S.here.mode !== 'gps' || dist(S.here, p) > 15) { first = false; setHere(p); }
-    else { S.here.acc = p.acc; emit('acc', p); }
-  }, err => { stopGps(); emit('gps', err.code === 1 ? 'denied' : 'error'); },
-  {enableHighAccuracy: true, maximumAge: 10000, timeout: 20000});
+    const cur = S.here?.mode === 'gps' ? S.here : null;
+    // 未有 GPS 位置：粗略嘅先等一陣，期間有準啲嘅就即刻用
+    if (!cur) {
+      if (p.acc <= ROUGH) { emit('gps', 'on'); use(p); return; }
+      if (!pending || p.acc < pending.acc) pending = p;
+      emit('gps', 'rough');
+      if (!roughT) roughT = setTimeout(() => { roughT = null; if (pending && S.here?.mode !== 'gps') { emit('gps', 'on'); use(pending); } }, WAIT_ROUGH);
+      return;
+    }
+    emit('gps', p.acc > ROUGH ? 'rough' : 'on');
+    const moved = dist(cur, p), age = Date.now() - (cur.at || 0);
+    const better = p.acc <= cur.acc * 0.85 + 3;                       // 準咗
+    const walked = moved > Math.max(25, (cur.acc + p.acc) * 0.8);     // 真係郁咗，唔係誤差跳動
+    const stale = age > 45000 && p.acc <= Math.max(cur.acc * 1.6, 60);   // 舊位置太耐冇更新
+    if (!(better || walked || stale)) return;
+    if (moved > 15) setHere(p);
+    else { Object.assign(S.here, {acc: p.acc, at: p.at, lat: better ? p.lat : S.here.lat, lng: better ? p.lng : S.here.lng}); emit('acc', p); }
+  };
+  const onErr = err => {
+    if (err.code === 1) { stopGps(); emit('gps', 'denied'); return; }
+    // timeout／暫時攞唔到：唔停，繼續等；太耐冇位置就重新開一次（部分 iPhone timeout 之後唔會再報位置）
+    if (S.here?.mode !== 'gps') emit('gps', 'busy');
+    clearTimeout(retryT);
+    retryT = setTimeout(() => {
+      if (watchId == null || Date.now() - lastFix < 25000) return;
+      navigator.geolocation.clearWatch(watchId);
+      watchId = navigator.geolocation.watchPosition(onPos, onErr, OPTS);
+    }, 3000);
+  };
+  const OPTS = {enableHighAccuracy: true, maximumAge: 0, timeout: 30000};
+  watchId = navigator.geolocation.watchPosition(onPos, onErr, OPTS);
 }
 
 /* ---------- 收藏 ---------- */
@@ -147,7 +186,8 @@ export function searchStops(q, limit = 8){
   }
   const vals = [...seen.values()], cnt = new Map();
   for (const v of vals) cnt.set(v.name.zh, (cnt.get(v.name.zh) || 0) + 1);
-  for (const v of vals) if (cnt.get(v.name.zh) > 1 && v.routes.size) v.sub = {zh: '途經 ' + [...v.routes].join('、'), en: 'Routes ' + [...v.routes].join(', ')};
+  // 每個車站都寫埋途經路線：同名或者唔熟嘅站都認得出係邊個
+  for (const v of vals) if (v.routes.size) v.sub = {zh: '途經 ' + [...v.routes].join('、'), en: 'Routes ' + [...v.routes].join(', ')};
   return vals.sort((a, b) => (a.score - (a.rail ? 1.5 : 0)) - (b.score - (b.rail ? 1.5 : 0)) || a.name.zh.length - b.name.zh.length).slice(0, limit);
 }
 export async function searchPlaces(q){
@@ -177,7 +217,7 @@ export function attachPicker(input, box, onPick, opt = {}){
   let tq, seq = 0, list = [];
   const draw = (alias, stops, plc, loading) => {
     const extra = [];
-    if (opt.here && S.here) extra.push({kind: 'here', name: {zh: '你嘅位置', en: 'Your location'}, lat: S.here.lat, lng: S.here.lng});
+    if (opt.here && S.here) extra.push({kind: 'here', name: S.here.mode === 'manual' ? {zh: `目前地點：${S.here.label}`, en: `Current: ${S.here.label}`} : {zh: '你嘅位置（GPS）', en: 'Your location (GPS)'}, lat: S.here.lat, lng: S.here.lng});
     if (opt.saved) {
       if (places.home) extra.push({kind: 'saved', name: {zh: '屋企', en: 'Home'}, ...places.home});
       if (places.work) extra.push({kind: 'saved', name: {zh: '學校／公司', en: 'School / Work'}, ...places.work});
@@ -190,7 +230,7 @@ export function attachPicker(input, box, onPick, opt = {}){
     list = [...alias, ...top, ...savedHit, ...plc.slice(0, opt.places ? 5 : 0), ...rest];
     if (!list.length && !loading) { box.innerHTML = q ? `<div class="empty">${L('搵唔到', 'No results')}</div>` : ''; box.classList.toggle('on', !!q); return; }
     box.innerHTML = list.map((x, i) => `<button type="button" role="option" data-i="${i}">
-      <span class="k k-${x.kind}">${x.kind === 'place' ? icon.pin : x.kind === 'here' ? icon.gps : x.kind === 'saved' || x.kind === 'alias' ? icon.star(true) : icon.bus}</span>
+      <span class="k k-${x.kind}">${x.kind === 'place' ? icon.pin : x.kind === 'here' ? icon.gps : x.kind === 'saved' ? icon.star(true) : x.kind === 'alias' ? (x.station ? icon.rail : icon.landmark) : icon.bus}</span>
       <span class="nm">${esc(nm(x.name))}${x.sub ? `<small>${esc(nm(x.sub))}</small>` : ''}</span>
       ${x.cos ? [...x.cos].slice(0, 2).map(coTag).join(' ') : ''}</button>`).join('') + (loading ? `<div class="empty">${L('搵緊地方…', 'Searching places…')}</div>` : '');
     box.classList.add('on');
@@ -198,8 +238,8 @@ export function attachPicker(input, box, onPick, opt = {}){
   input.addEventListener('input', () => {
     clearTimeout(tq);
     const q = input.value, my = ++seq, al = aliasOf(q);
-    const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, ...S.DB.stopList[al.code].location}]
-      : al?.pt ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, lat: al.pt[0], lng: al.pt[1]}] : [];
+    const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', station: true, name: {zh: al.zh, en: al.en}, sub: {zh: '港鐵站', en: 'MTR station'}, ...S.DB.stopList[al.code].location}]
+      : al?.pt ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, sub: {zh: '地標', en: 'Landmark'}, lat: al.pt[0], lng: al.pt[1]}] : [];
     const stops = searchStops(al?.q || q, 10);
     const wantPlaces = opt.places && (al?.q || q).trim().length >= 2;
     draw(alias, stops, [], wantPlaces);
@@ -220,6 +260,7 @@ export function attachPicker(input, box, onPick, opt = {}){
     const x = list[+b.dataset.i];
     picked = true;
     box.classList.remove('on'); input.value = opt.keep ? nm(x.name) : ''; input.blur();
-    onPick({lat: x.lat, lng: x.lng, label: nm(x.name), name: x.name, kind: x.kind});
+    // 車站（包括「港大」呢類港鐵站叫法）唔使計落樓等𨋢
+    onPick({lat: x.lat, lng: x.lng, label: nm(x.name), name: x.name, kind: x.kind, noDoor: x.kind === 'stop' || !!x.station});
   });
 }

@@ -1,0 +1,44 @@
+# 港途 · 準時度紀錄：每 10 分鐘行一次，每次連續記錄 9 分鐘（每 30 秒一次），結果存喺 punctuality-data 分支
+# 公開 repo 嘅 GitHub Actions 免費。要記錄邊啲路線，改 tools/punctuality/watch.json。
+name: punctuality
+on:
+  schedule:
+    - cron: '*/10 22-23,0-15 * * *'   # UTC，即香港時間 06:00–23:59
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: punctuality
+  cancel-in-progress: false
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: 準備 punctuality-data 分支
+        run: |
+          git config --global user.name "hkgo-bot"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth=1 origin punctuality-data; then
+            git worktree add -B punctuality-data data FETCH_HEAD
+          else
+            git worktree add --detach data
+            cd data && git checkout --orphan punctuality-data && git rm -rfq . && cd ..
+          fi
+      - name: 記錄到站預報（9 分鐘）
+        run: node tools/punctuality/collect.mjs data/raw
+        env:
+          DURATION_SEC: '540'
+          INTERVAL_SEC: '30'
+      - name: 分析
+        run: node tools/punctuality/analyze.mjs data/raw data/summary.json
+      - name: 儲存
+        run: |
+          cd data
+          git add -A
+          git commit -qm "準時度紀錄 $(date -u +%FT%TZ)" || exit 0
+          for i in 1 2 3; do git push -q origin punctuality-data && break; git pull -q --rebase origin punctuality-data; done

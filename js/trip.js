@@ -4,6 +4,9 @@ import {S, $, esc, store, L, nm, hhmm, mins, now, flaps, tilesFor, routeLabel, r
 import {cycle, etaFor} from './eta.js';
 import {openSheet, closeSheet, addLayer, back} from './ui.js';
 import {planTrip, toTrip, legChips} from './plan.js';
+import {logTrip} from './habit.js';
+import {wxLine} from './wx.js';
+import {shareTrip} from './share.js';
 
 let layer = false, trip = null, lists = [], tick = null, poll = null, wake = null, gpsW = null, pos = null, lastSay = '', shown = false, lastSig = '', lowBatt = false, wantWake = false;
 // iPhone：網頁 app 鎖咗機或者轉咗去第二個 app 就唔會再跑，提示會遲到
@@ -20,7 +23,7 @@ export function startTrip(t){
   if (!t.legs?.length) return;
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
   LN()?.requestPermissions?.().catch?.(() => {});
-  trip = {...t, stage: 'prep', li: 0, pick: t.legs.map(() => null), boardedAt: [], leftAt: null, startedAt: now(), alerted: {}, buf: store.get('tripBuf', 0)};
+  trip = {...t, stage: 'prep', li: 0, pick: t.legs.map(() => null), boardedAt: [], leftAt: null, startedAt: now(), alerted: {}, buf: store.get('tripBuf', 0), wxF: S.wx?.factor || 1};
   save(); start(true);
 }
 const save = () => store.set('trip', trip);
@@ -73,7 +76,7 @@ function wakeFor(stage, rem){
 function release(){ try { wake?.release(); } catch {} wake = null; }
 function watchGps(){
   if (gpsW != null || !('geolocation' in navigator)) return;
-  gpsW = navigator.geolocation.watchPosition(p => { pos = {lat: p.coords.latitude, lng: p.coords.longitude, acc: p.coords.accuracy}; }, () => {}, {enableHighAccuracy: true, maximumAge: 5000});
+  gpsW = navigator.geolocation.watchPosition(p => { const a = p.coords.accuracy; if (pos && a > 150 && a > pos.acc * 2 && Date.now() - pos.at < 60000) return; pos = {lat: p.coords.latitude, lng: p.coords.longitude, acc: a, at: Date.now()}; }, () => {}, {enableHighAccuracy: true, maximumAge: 0, timeout: 30000});
 }
 
 async function load(){
@@ -112,7 +115,10 @@ function cancelNative(){ nativeSig = ''; try { LN()?.cancel({notifications: NIDS
 
 /* ---------- 計時間 ---------- */
 // 第一程步行時間 + 用家自訂預留（天橋、紅綠燈、等電梯）：直線距離計唔到呢啲
-const walkOf = i => i === 0 ? trip.walk0 + (trip.buf || 0) : (trip.legs[i].walk || 0);
+// 開始倒數之後天氣變咗（例如轉咗黃雨）：按比例調整第一程步行時間
+const wxAdj = m => Math.ceil(m * (S.wx?.factor || 1) / (trip.wxF || 1));
+// 第一程 = 落樓等𨋢（唔受天氣影響）+ 行路（天氣調整）+ 自訂預留
+const walkOf = i => i === 0 ? (trip.door || 0) + wxAdj(trip.walk0 - (trip.door || 0)) + (trip.buf || 0) : (trip.legs[i].walk || 0);
 const BUFS = [0, 3, 5];
 function chain(){
   // 由目前狀態推算每程嘅上車、落車時間
@@ -173,7 +179,8 @@ function paint(force){
     label = rem > 0 ? L('距離出門仲有', 'Leave in') : L('夠鐘出門！', 'Time to go!');
     big = clock(Math.max(0, rem));
     const bufTxt = trip.buf ? L(` + 預留 ${trip.buf} 分鐘`, ` + ${trip.buf} min spare`) : '';
-    lines.push(L(`${Y(leaveT)} 出門 · 行 ${trip.walk0} 分鐘${bufTxt}去 ${esc(stopName(l.board))}`, `Leave ${Y(leaveT)} · walk ${trip.walk0} min${bufTxt} to ${esc(stopName(l.board))}`));
+    const dTxt = trip.door ? L(`落樓等𨋢 ${trip.door} 分鐘 + `, `${trip.door} min lift + `) : '', wk = wxAdj(trip.walk0 - (trip.door || 0));
+    lines.push(L(`${Y(leaveT)} 出門 · ${dTxt}行 ${wk} 分鐘${bufTxt}去 ${esc(stopName(l.board))}`, `Leave ${Y(leaveT)} · ${dTxt}walk ${wk} min${bufTxt} to ${esc(stopName(l.board))}`));
     lines.push(L(`趕 ${Y(cur.boardT)} 嗰班 ${esc(rname(l))}`, `Catch the ${Y(cur.boardT)} ${esc(rname(l))}`) + (cur.est ? `<small>${L('（估計，暫無實時資料）', ' (estimated)')}</small>` : cur.sched ? `<small>${L('（時間表班次）', ' (scheduled)')}</small>` : ''));
     if (trip.to) lines.push(L(`約 ${Y(c.arriveT)} 到 ${esc(trip.to.label)}`, `Arrive ~${Y(c.arriveT)} at ${esc(trip.to.label)}`));
     btns = [['left', 'y', icon.door, L('出咗門', 'I’ve left')], ['other', 'd', icon.list, L('揀第二班', 'Another bus')], ['cancel', 'd', icon.x, L('取消', 'Cancel')]];
@@ -203,7 +210,7 @@ function paint(force){
       lines.push(L(`喺 ${esc(stopName(l.alight))} 落車`, `Get off at ${esc(stopName(l.alight))}`) + (sl ? L(` · 仲有 ${sl.left} 個站`, ` · ${sl.left} stops to go`) : ''));
       note = L('保持呢個畫面開住，先收到落車提示', 'Keep this screen open to get the alight alert');
       const nx = trip.legs[i + 1];
-      if (nx) lines.push(L(`落車後行 ${walkOf(i + 1)} 分鐘轉 ${esc(rname(nx))}（${Y(c.legs[i + 1].boardT)} 到）`, `Then walk ${walkOf(i + 1)} min to the ${esc(rname(nx))} (due ${Y(c.legs[i + 1].boardT)})`));
+      if (nx) lines.push(xferLine(c, i));
       else if (trip.to) lines.push(L(`約 ${Y(c.arriveT)} 到 ${esc(trip.to.label)}`, `Arrive ~${Y(c.arriveT)} at ${esc(trip.to.label)}`));
       // 兩階段提示：快將到站（仲有 2 個站／約 3 分鐘）→ 下一站落車（仲有 1 個站／300 多米）
       const near = sl ? (sl.left <= 1 || sl.dAlight < 350) : rem < 90000;
@@ -226,6 +233,7 @@ function paint(force){
     say = L('到咗目的地', 'You have arrived');
   }
   if (shiftMsg && now() < shiftUntil) lines.unshift(`<span class="shift">${esc(shiftMsg)}</span>`);
+  if (trip.stage === 'prep' || trip.stage === 'go') { const w = wxLine(); if (w) lines.push(w.replace(/^<p /, '<span ').replace(/<\/p>$/, '</span>')); }
   lastSay = say;
   wakeFor(trip.stage, trip.stage === 'prep' ? cur.boardT - walkOf(0) * 60000 - T0 : 0);
   if (shown && IOS && (trip.stage === 'go' || trip.stage === 'ride') && !note) note = L('保持呢個畫面開住，先收到提示', 'Keep this screen open for alerts');
@@ -254,7 +262,8 @@ function paint(force){
       <div class="trip-lines">${lines.filter(Boolean).map(x => `<p>${x}</p>`).join('')}</div>
       <div class="trip-btns">${btns.map(([a, k, ic, t]) => `<button class="tb ${k}" data-a="${a}" type="button">${ic}<span>${t}</span></button>`).join('')}</div>
       ${note ? `<p class="trip-note">${esc(note)}${IOS ? L('。iPhone 鎖咗機就唔會響。', '. iPhone won’t alert while locked.') : ''}</p>` : ''}
-      ${trip.stage === 'prep' ? `<button class="trip-cal" data-a="buf" type="button">${icon.walk}<span>${L(`預留時間 +${trip.buf || 0} 分鐘（天橋、紅綠燈、等電梯）· 撳一下改`, `Extra time +${trip.buf || 0} min (footbridges, lights, lifts) · tap to change`)}</span></button>` : ''}
+      ${trip.stage === 'prep' ? `<button class="trip-cal" data-a="buf" type="button">${icon.walk}<span>${L(`額外預留 +${trip.buf || 0} 分鐘（天橋、紅綠燈）· 撳一下改`, `Extra time +${trip.buf || 0} min (footbridges, lights) · tap to change`)}</span></button>` : ''}
+      ${trip.stage !== 'done' && trip.to ? `<button class="trip-cal" data-a="share" type="button">${icon.share}<span>${L('分享行程俾屋企人／朋友（WhatsApp）', 'Share my trip (WhatsApp)')}</span></button>` : ''}
       ${trip.stage !== 'done' ? `<button class="trip-cal" data-a="cal" type="button">${icon.bell}<span>${IOS ? L('加入行事曆提醒（鎖機都會響）', 'Add calendar alarms (work when locked)') : L('加入行事曆提醒', 'Add calendar alarms')}</span></button>` : ''}
       ${wantWake ? `<p class="trip-note dim">${L('螢幕會保持常亮', 'Screen stays on')}${lowBatt ? '' : ''}</p>` : lowBatt && S.set.awake !== 'off' ? `<p class="trip-note dim">${L('電量低過 20%，已停用螢幕常亮', 'Battery below 20% — keep-awake paused')}</p>` : ''}
     </div>
@@ -265,6 +274,18 @@ function paint(force){
     const m = lines.join('').match(/<b class="dyn-m">(\d+)<\/b>/), dm = box.querySelector('.dyn-m');
     if (m && dm && dm.textContent !== m[1]) dm.textContent = m[1];
   }
+}
+// 轉車實時判斷：落車後行去轉車站，邊班趕得切、邊班趕唔切
+function xferLine(c, i){
+  const nx = trip.legs[i + 1], w = walkOf(i + 1), arr = c.legs[i].alightT + w * 60000, T0 = now();
+  const list = (lists[i + 1]?.list || []).filter(e => e.t >= T0);
+  const miss = list.filter(e => e.t < arr - 30000 && e.t >= c.legs[i].alightT - 60000).pop();
+  const nxt = c.legs[i + 1], inM = t => Math.max(0, Math.round((t - T0) / 60000));
+  let s = w ? L(`落車後行 ${w} 分鐘轉 ${esc(rname(nx))}`, `Then walk ${w} min to the ${esc(rname(nx))}`) : L(`落車後同站轉 ${esc(rname(nx))}`, `Then change to the ${esc(rname(nx))} here`);
+  if (miss) s += L(`：${Y(miss.t)} 嗰班（${inM(miss.t)} 分鐘後）<b class="late">趕唔切</b>，搭 ${Y(nxt.boardT)} 嗰班（${inM(nxt.boardT)} 分鐘後）`,
+    `: the ${Y(miss.t)} (in ${inM(miss.t)} min) is <b class="late">too soon</b>, take the ${Y(nxt.boardT)} (in ${inM(nxt.boardT)} min)`);
+  else s += L(`：<b class="go">趕得切</b> ${Y(nxt.boardT)} 嗰班（${inM(nxt.boardT)} 分鐘後${nxt.est ? '，估計' : ''}）`, `: <b class="go">you’ll make</b> the ${Y(nxt.boardT)} (in ${inM(nxt.boardT)} min${nxt.est ? ', est.' : ''})`);
+  return s;
 }
 function progress(c){
   const parts = [], i = trip.li, st = trip.stage;
@@ -287,10 +308,11 @@ document.addEventListener('click', e => {
   else if (a === 'say') speak(lastSay);
   else if (a === 'awake') { S.set.awake = S.set.awake === 'off' ? 'auto' : 'off'; saveSettings(); toast(S.set.awake === 'off' ? L('已關閉螢幕常亮', 'Keep-awake off') : L('已開啟螢幕常亮', 'Keep-awake on')); paint(true); }
   else if (a === 'cal') calendar();
+  else if (a === 'share') { const c = chain(); shareTrip(trip, c, c.legs[0] ? c.legs[0].boardT - walkOf(0) * 60000 : null); }
   else if (a === 'buf') { trip.buf = BUFS[(BUFS.indexOf(trip.buf || 0) + 1) % BUFS.length]; store.set('tripBuf', trip.buf); trip.est = []; save(); paint(true); }
   else if (a === 'cancel') { stop(); toast(L('已取消', 'Cancelled')); }
   else if (a === 'finish') stop();
-  else if (a === 'left') { trip.stage = 'go'; trip.leftAt = now(); trip.pick[0] = chain().legs[0].boardT; save(); watchGps(); paint(); }
+  else if (a === 'left') { logTrip(trip); trip.stage = 'go'; trip.leftAt = now(); trip.pick[0] = chain().legs[0].boardT; save(); watchGps(); paint(); }
   else if (a === 'board') { trip.stage = 'ride'; trip.boardedAt[trip.li] = now(); save(); watchGps(); paint(); }
   else if (a === 'alight') {
     if (trip.li < trip.legs.length - 1) { trip.li++; trip.stage = 'go'; trip.leftAt = now(); }

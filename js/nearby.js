@@ -1,5 +1,5 @@
 // 港途 · 附近車站
-import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
+import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, doorMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
   stopLoc, stopName, bearing, compass, icon, FERRY, toast, now, nextDepAfter} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, setHere, startGps, stopGps, gpsOn, attachPicker, starBtn, toggleFav, isFav, openSheet, closeSheet} from './ui.js';
@@ -10,7 +10,7 @@ import {startTrip} from './trip.js';
 const RADII = ['auto', 30, 100, 300, 500];
 let maxGroups = 14;
 const PRESETS = [['HUH', '紅磡', 'Hung Hom'], ['MOK', '旺角', 'Mong Kok'], ['CEN', '中環', 'Central'], ['CAB', '銅鑼灣', 'Causeway Bay'], ['SHT', '沙田', 'Sha Tin'], ['TUM', '屯門', 'Tuen Mun'], ['TUC', '東涌', 'Tung Chung']];
-let hiddenN = 0, lastView = '', groups = [], effR = 30, note = '', lastFetch = 0, cyc = 0, mode = store.get('nearMode', 'list'), map = null, rowsById = new Map();
+let hiddenN = 0, lastView = '', groups = [], effR = 30, note = '', lastFetch = 0, cyc = 0, mode = store.get('nearMode', 'list'), map = null, rowsById = new Map(), panned = false, viewAt = null, viewR = null;
 
 export function initNearby(){
   const v = $('v-near');
@@ -49,10 +49,11 @@ export function initNearby(){
   on('here', p => { maxGroups = 14; paintLoc(); makeGroups(); });
   on('acc', paintLoc);
   on('gps', st => {
-    $('gpsBtn').toggleAttribute('aria-busy', st === 'busy');
+    $('gpsBtn').toggleAttribute('aria-busy', st === 'busy' || (st === 'rough' && S.here?.mode !== 'gps'));
     if (st === 'outside') { $('locName').textContent = L('你而家唔喺香港', 'You are outside Hong Kong'); $('locSub').textContent = L('可以搜尋或者揀一個地點試用', 'Search or pick a place to try'); }
     if (st === 'denied') toast(L('你冇俾定位權限，可以用搜尋或者揀地點。', 'Location permission denied — search or pick a place.'));
     if (st === 'error') toast(L('暫時攞唔到位置', 'Could not get location'));
+    if ((st === 'rough' || st === 'busy') && S.here?.mode !== 'gps') { $('locSub').textContent = st === 'rough' ? L('定位緊，等 GPS 收到衛星（行近窗口會快啲）…', 'Locating — waiting for GPS (near a window helps)…') : L('定位緊…', 'Locating…'); }
   });
   on('favs', () => render());
   on('tab', t => { if (t === 'near') { refresh(); if (mode === 'map') render(); } });
@@ -185,10 +186,11 @@ function etaCell(row, key){
   return big + (small ? `<small>${esc(small)}</small>` : '');
 }
 function advice(row, walk){
+  walk += doorMin(S.here);                       // 落樓 + 等𨋢
   const list = live(row);
   if (!list.length || mins(list[0].t) >= 60) return '';
   const ok = list.find(e => mins(e.t) >= walk);
-  if (!ok) return `<span class="adv late">${L(`步行 ${walk} 分鐘，趕唔切`, `${walk} min walk — can't make it`)}</span>`;
+  if (!ok) return `<span class="adv late">${L(`出門要 ${walk} 分鐘，趕唔切`, `${walk} min to get there — can't make it`)}</span>`;
   const left = mins(ok.t) - walk;
   const txt = left <= 0 ? L('而家出發', 'Leave now') : L(`${left} 分鐘後出發`, `Leave in ${left} min`);
   return `<span class="adv go">${ok !== list[0] ? L('趕唔切呢班 · 下一班 ', 'Too late for this one · next: ') : ''}${txt}</span>`;
@@ -251,7 +253,7 @@ export function render(){
   const radSel = `<label class="rad"><span class="sr">${L('範圍', 'Radius')}</span><select id="rad">${RADII.map(r => `<option value="${r}"${String(S.set.radius) === String(r) ? ' selected' : ''}>${r === 'auto' ? L('自動範圍', 'Auto') : r + L(' 米', ' m')}</option>`).join('')}</select></label>`;
   let h = `<div class="status"><div class="st-l"><b>${n ? L(`${effR} 米內 ${n} 個站`, `${n} stops · ${effR} m`) : L(`${effR} 米內冇車站`, `No stops within ${effR} m`)}</b><span>${lastFetch ? (S.online ? L('更新 ', 'Updated ') + hhmm(lastFetch) + L(' · 每 30 秒', ' · every 30 s') : L('離線 · 顯示 ', 'Offline · ') + (S.lastOk ? hhmm(S.lastOk) : '') + L(' 嘅資料', ' data')) : ''}</span></div>${radSel}</div>`;
   if (note) h = h.replace('<span>', `<span class="wide">${esc(note)}</span><span>`);
-  if (S.here.mode === 'gps' && S.here.acc > 50) h += `<div class="notice gpsn"><p>${L(`定位誤差 ±${Math.round(S.here.acc)} 米，車站可能唔準`, `Accuracy ±${Math.round(S.here.acc)} m — stops may be off`)}</p><div><button class="btn-d sm" data-fix="map" type="button">${L('地圖揀位置', 'Pick on map')}</button><button class="btn-d sm" data-fix="search" type="button">${L('搜尋', 'Search')}</button></div></div>`;
+  if (S.here.mode === 'gps' && S.here.acc > 50) h += `<div class="notice gpsn"><p>${L(`定位誤差 ±${Math.round(S.here.acc)} 米，車站可能唔準`, `Accuracy ±${Math.round(S.here.acc)} m — stops may be off`)}${S.here.acc > 800 ? `<br><small>${L('誤差咁大，多數係手機冇開「精確位置」：iPhone 去 設定 → 私隱與保安 → 定位服務 → Safari 網站 → 開「精確位置」；Android 去 設定 → 位置 → 開「Google 定位準確度」。', 'This usually means Precise Location is off: iPhone Settings → Privacy & Security → Location Services → Safari Websites → Precise Location.')}</small>` : ''}</p><div><button class="btn-d sm" data-fix="map" type="button">${L('地圖揀位置', 'Pick on map')}</button><button class="btn-d sm" data-fix="search" type="button">${L('搜尋', 'Search')}</button></div></div>`;
   if (groups.some(g => [...g.rows.values()].some(r => live(r)[0]?.sched))) h += `<p class="legend"><span class="lg-s">05</span>${L('灰色數字 = 時間表班次，唔係實時位置', 'Grey digits = timetable, not live')}</p>`;
   if (document.activeElement?.id !== 'rad') st.innerHTML = h;     // 用家揀緊範圍就唔好重畫
   $('nmap').hidden = mode !== 'map';
@@ -264,10 +266,26 @@ export function render(){
 async function drawMap(){
   const el = $('nmap');
   try {
-    if (!map || !el._map) { map = await makeMap(el, S.here, 17); lastView = ''; }
+    if (!map || !el._map) {
+      map = await makeMap(el, S.here, 17); lastView = ''; panned = false;
+      map.on('dragstart zoomstart', e => { if (!map._auto) panned = true; });
+      // 「回到我嘅位置」掣
+      const Back = window.L.Control.extend({options: {position: 'bottomright'}, onAdd(){
+        const b = window.L.DomUtil.create('button', 'map-me');
+        b.type = 'button'; b.setAttribute('aria-label', L('回到我嘅位置', 'Back to my location')); b.innerHTML = icon.gps;
+        window.L.DomEvent.disableClickPropagation(b);
+        b.onclick = () => { panned = false; lastView = ''; drawMap(); };
+        return b; }});
+      new Back().addTo(map);
+    }
     map.invalidateSize();
+    // 用家自己拖過或者縮放過地圖：位置有少少跳動唔好扯返轉頭（以前一隻手指拖兩下就俾佢彈返）
     const vk = S.here.lat.toFixed(5) + S.here.lng.toFixed(5) + effR;
-    if (vk !== lastView) { lastView = vk; map.setView([S.here.lat, S.here.lng], effR <= 100 ? 18 : effR <= 300 ? 17 : 16); }
+    const far = viewAt && dist(viewAt, S.here) > 300;
+    if (vk !== lastView && (!panned || far || viewR !== effR)) {
+      lastView = vk; viewAt = {lat: S.here.lat, lng: S.here.lng}; viewR = effR; panned = false;
+      map._auto = true; map.setView([S.here.lat, S.here.lng], effR <= 100 ? 18 : effR <= 300 ? 17 : 16); map._auto = false;
+    }
     const Lf = window.L;
     map.eachLayer(l => { if (l._hk) map.removeLayer(l); });
     const add = l => { l._hk = 1; l.addTo(map); return l; };
@@ -336,7 +354,7 @@ function rowSheet(g, key, s, cos, list, note){
     card.querySelector('#seeRoute').onclick = () => closeSheet(() => openRoute(key, s.stop));
     card.querySelector('#goTrip').onclick = () => {
       const a = card.querySelector('#alight').value;
-      closeSheet(() => startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: g.walk,
+      closeSheet(() => startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: g.walk + doorMin(S.here), door: doorMin(S.here),
         legs: [{key, co: s.co, board: s.stop, bseq: s.seq, alight: a ? st[+a] : null, aseq: a ? +a : null}], walkEnd: 0,
         to: a ? {label: stopName(st[+a]), ...stopLoc(st[+a])} : null}));
     };

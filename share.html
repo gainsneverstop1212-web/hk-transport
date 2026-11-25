@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111111">
+<meta name="robots" content="noindex">
+<meta name="description" content="朋友分享嘅行程：實時到站同預計到達時間">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<title>港途 · 朋友嘅行程</title>
+<style>
+  body{padding-bottom:24px}
+  .sh-wrap{max-width:560px;margin:0 auto;padding:20px 16px;display:grid;gap:16px}
+  .sh-card{background:var(--flap);border-top:3px solid var(--yellow);padding:18px 16px;display:grid;gap:10px}
+  .sh-card .lbl{margin:0;color:var(--grey);font-size:14px}
+  .sh-at{font:800 64px/1 var(--disp);letter-spacing:.02em;color:var(--yellow);margin:0}
+  .sh-to{font:700 22px/1.3 var(--body);margin:0}
+  .sh-line{margin:0;color:#ddd}
+  .sh-live{margin:0;font-size:15px;color:#cfcfcf}
+  .sh-live b{color:var(--white)}
+  .sh-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3ad16b;margin-right:6px;vertical-align:middle;animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  @media (prefers-reduced-motion:reduce){.sh-dot{animation:none}}
+</style>
+</head>
+<body>
+<header class="sign"><div class="wrap"><p class="brand">
+  <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="4" fill="#111"/><path d="M8 15h12m-5-6 6 6-6 6" stroke="#ffc917" stroke-width="3.2" fill="none" stroke-linecap="square"/></svg>
+  <span id="brandName">港途</span> <small id="brandSub">朋友嘅行程</small></p></div></header>
+<main class="sh-wrap" id="out"><p class="loading">載入中…</p></main>
+<script type="module">
+import {S, esc, hhmm, now, L} from './js/core.js';
+import {etaFor, cycle} from './js/eta.js';
+
+const p = new URLSearchParams(location.hash.slice(1));
+S.set.lang = p.get('z') === 'en' ? 'en' : 'zh';
+document.documentElement.lang = S.set.lang === 'en' ? 'en' : 'zh-HK';
+document.title = L('港途 · 朋友嘅行程', 'HK GO · Shared trip');
+document.getElementById('brandName').textContent = L('港途', 'HK GO');
+document.getElementById('brandSub').textContent = L('朋友嘅行程', 'Shared trip');
+const out = document.getElementById('out');
+const num = k => p.get(k) === '' || p.get(k) == null ? null : +p.get(k);
+const co = p.get('co'), seq = num('q'), ea = num('ea'), at0 = num('at'), we = num('we') || 0, to = p.get('to') || '', sn = p.get('sn') || '', rl = p.get('rl') || '';
+const live = !p.get('nolive') && co && p.get('s') && seq != null;
+// 唔使成份路線資料：用連結入面嘅資料砌一條最簡單嘅路線
+const r = {route: p.get('r'), bound: {[co]: p.get('d') || ''}, serviceType: p.get('st'), gtfsId: p.get('g'), nlbId: p.get('n'), dest: {zh: ''},
+  stops: {[co]: co === 'mtr' ? [...new Array((seq ?? 0) + 1).fill(''), ...(p.get('dn') || '').split(',').filter(Boolean)] : []}};
+let at = at0, liveT = null, checked = 0;
+
+async function refresh(){
+  if (!live) return;
+  try {
+    const res = await etaFor(cycle(), co, r, p.get('s'), seq);
+    // 揀最接近原本預計落車時間嗰班（相差 20 分鐘內）
+    const best = res.list.filter(e => ea && Math.abs(e.t - ea) < 20 * 60000).sort((a, b) => Math.abs(a.t - ea) - Math.abs(b.t - ea))[0];
+    if (best) { liveT = best.t; at = best.t + we * 60000; } else liveT = null;
+    checked = now();
+  } catch {}
+  draw();
+}
+function draw(){
+  if (!at0) { out.innerHTML = `<div class="sh-card"><p class="sh-to">${L('連結唔完整', 'This link is incomplete')}</p></div>`; return; }
+  const done = now() > at + 20 * 60000, m = Math.round((at - now()) / 60000);
+  out.innerHTML = `<div class="sh-card">
+    <p class="lbl">${done ? L('呢個行程應該已經到咗', 'This trip should have arrived') : L('預計到達', 'Expected arrival')}</p>
+    <p class="sh-at">${hhmm(at)}</p>
+    <p class="sh-to">${esc(to ? L(`到 ${to}`, `at ${to}`) : '')}${!done && m > 0 ? `<small class="lbl"> · ${L(`大約 ${m} 分鐘後`, `in about ${m} min`)}</small>` : ''}</p>
+    <p class="sh-line">${esc(rl)}${sn ? esc(L(` · 喺 ${sn} 落車`, ` · gets off at ${sn}`)) : ''}</p>
+    ${done ? '' : live ? (liveT ? `<p class="sh-live"><span class="sh-dot" aria-hidden="true"></span>${L(`實時：車預計 <b>${hhmm(liveT)}</b> 到 ${esc(sn)}`, `Live: vehicle due at ${esc(sn)} <b>${hhmm(liveT)}</b>`)} · ${L('更新於', 'updated')} ${hhmm(checked)}</p>`
+      : `<p class="sh-live">${L('暫時配對唔到實時班次，顯示出發時嘅估計', 'No live match yet — showing the original estimate')}</p>`)
+      : `<p class="sh-live">${L('呢類交通工具冇實時資料，顯示出發時嘅估計', 'No live data for this service — original estimate')}</p>`}
+  </div>
+  <p class="hint">${L('時間係按實時到站估算，只供參考；連結唔會顯示對方嘅位置。', 'Times are estimates from live arrivals; the link does not show their location.')}</p>
+  <a class="btn-d big" href="./">${L('用港途計你自己幾時出門', 'Use HK GO for your own trips')}</a>`;
+}
+draw(); refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 30000);
+setInterval(draw, 15000);
+</script>
+</body>
+</html>

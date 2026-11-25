@@ -7,6 +7,9 @@ import {initPlan} from './plan.js';
 import {initSaved} from './saved.js';
 import {initNews} from './news.js';
 import {initTrip} from './trip.js';
+import {initWx} from './wx.js';
+import {initAlerts} from './alerts.js';
+import {dueCommute} from './habit.js';
 
 const TABS = [
   ['near', '附近', 'Nearby', '<path d="M12 2 4 21l8-4 8 4z" fill="currentColor"/>'],
@@ -26,6 +29,7 @@ function shell(){
     'Arrival times from the Transport Department (DATA.GOV.HK) and operators’ open data, for reference only. Route data: <a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">HK Bus Crawling@2021</a>; maps and addresses: Lands Department and the Address Lookup Service. Trams and red minibuses have no open real-time data.');
   $('tabs').setAttribute('aria-label', L('主選單', 'Main menu'));
   $('trip').setAttribute('aria-label', L('出門倒數', 'Leave countdown'));
+  $('alertBar').setAttribute('aria-label', L('你嘅路線消息', 'Alerts for your routes'));
   if ($('bootH')) { $('bootH').textContent = L('正在準備全港路線資料', 'Preparing Hong Kong route data'); $('loadTxt').textContent = L('第一次開要下載約 8 MB；之後即開，路線資料會喺背景每日更新。', 'First launch downloads about 8 MB; after that it opens instantly and refreshes in the background daily.'); }
   $('langBtn').textContent = S.set.lang === 'en' ? '中' : 'EN';
   $('langBtn').setAttribute('aria-label', L('Switch to English', '轉做中文'));
@@ -59,11 +63,16 @@ async function boot(){
   await new Promise(r => setTimeout(r, 20));
   buildIndex();
   $('boot').remove();
-  initNearby(); initRoute(); initPlan(); initSaved(); initNews(); initTrip();
-  go(store.get('tab', 'near'));
+  initWx();
+  initNearby(); initRoute(); initPlan(); initSaved(); initNews(); initTrip(); initAlerts();
+  // 而家係你平時出門前後：直接開常用頁（出門倒數），唔使自己揀
+  go(dueCommute() ? 'saved' : store.get('tab', 'near'));
   const saved = store.get('place', null);
   if (saved) setHere({...saved, mode: 'manual'});
-  if (navigator.permissions) navigator.permissions.query({name: 'geolocation'}).then(p => { if (p.state === 'granted') startGps(); }).catch(() => {});
+  // 舊版 iPhone Safari 答唔到「有冇定位權限」：之前用過 GPS 就照開，唔好停留喺上次手動揀嘅地點
+  const autoGps = () => { if (store.get('gpsUsed', false)) startGps(); };
+  if (navigator.permissions?.query) navigator.permissions.query({name: 'geolocation'}).then(p => { if (p.state === 'granted') startGps(); else if (p.state !== 'denied' && p.state !== 'prompt') autoGps(); }).catch(autoGps);
+  else autoGps();
   window.addEventListener('online', () => { S.online = true; });
   window.addEventListener('offline', () => { S.online = false; });
 }

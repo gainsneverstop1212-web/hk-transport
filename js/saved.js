@@ -5,6 +5,9 @@ import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPi
 import {planTrip, toTrip, legChips, planTo} from './plan.js';
 import {openRoute} from './route.js';
 import {startTrip} from './trip.js';
+import {dueCommute, learned, describe, clearHabits, fmtMin, scheduleHabitNotifs} from './habit.js';
+import {badLines, legLine, lineText} from './alerts.js';
+import {wxLine} from './wx.js';
 
 let confirmCell = false, smart = null, smartAt = 0, smartBusy = false, favEta = new Map(), favAt = 0;
 export function initSaved(){
@@ -16,11 +19,18 @@ export function initSaved(){
   on('tab', t => { if (t === 'saved') draw(true); });
   on('places', () => { smartAt = 0; draw(true); });
   on('favs', () => { favAt = 0; if (!$('v-saved').hidden) draw(true); });
+  // 天氣或者路線出事：重新計（步行時間、避開受影響路線）
+  const redo = () => { smartAt = 0; if (!$('v-saved').hidden) draw(true); };
+  on('wx', redo); on('alerts', redo);
+  scheduleHabitNotifs();
   setInterval(() => { if (!$('v-saved').hidden && !document.hidden) draw(); }, 20000);
 }
 function target(){
   const h = new Date(Date.now() + 288e5).getUTCHours(), wd = dayIdx();   // 公眾假期當星期日
   const near = p => S.here && p && dist(S.here, p) < 400;
+  // 學識咗嘅通勤習慣排第一：而家係平時出門前後，就直接計去嗰度
+  const c = dueCommute();
+  if (c) return {...c.to, label: c.label, icon: 'habit', habit: c, from: c.from};
   let t = null;
   if (places.work && wd >= 1 && wd <= 5 && h >= 5 && h < 12 && !near(places.work)) t = {...places.work, label: L('學校／公司', 'School / Work'), icon: 'work'};
   else if (places.home && !near(places.home)) t = {...places.home, label: L('屋企', 'Home'), icon: 'home'};
@@ -31,21 +41,29 @@ async function draw(force){
   drawPlaces(); drawSettings();
   const t = target(), sm = $('smart');
   if (!t) sm.innerHTML = `<div class="smart empty"><p class="lbl">${L('智能主頁', 'Smart home')}</p><h2>${L('設定屋企同學校／公司', 'Set Home and School / Work')}</h2><p>${L('設定之後，呢度會按時間自動話你知幾時出門：朝早去學校／返工，夜晚返屋企。', 'Then this card tells you when to leave — to work in the morning, home in the evening.')}</p></div>`;
-  else if (!S.here) sm.innerHTML = `<div class="smart empty"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p><h2>${L('需要你嘅位置', 'Needs your location')}</h2><p>${L('喺「附近」頁撳定位，或者揀一個地點。', 'Locate yourself on the Nearby tab first.')}</p></div>`;
+  else if (!S.here && !t.habit) sm.innerHTML = `<div class="smart empty"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p><h2>${L('需要你嘅位置', 'Needs your location')}</h2><p>${L('喺「附近」頁撳定位，或者揀一個地點。', 'Locate yourself on the Nearby tab first.')}</p></div>`;
   else if (!smartBusy && (!smart || Date.now() - smartAt > 180000 || smart.t.label !== t.label || (force && Date.now() - smartAt > 30000))) {
     if (!smart || smart.t.label !== t.label) sm.innerHTML = `<div class="smart"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p><p class="loading">${L('計緊最快路線…', 'Finding the fastest trip…')}</p></div>`;
     smartAt = Date.now(); smartBusy = true;
-    const from = {lat: S.here.lat, lng: S.here.lng, label: S.here.label};
-    const opts = await planTrip(from, t, 3).catch(() => []);
+    // 未定位但係學識咗嘅通勤：用平時嘅起點計（通常係屋企）
+    const from = S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : {...t.from, label: t.from.label || L('平時起點', 'Usual start')};
+    const opts = await planTrip(from, t, 6).catch(() => []);
     smartBusy = false;
-    smart = {t, o: opts.find(o => o.legs.length) || opts[0], from};
+    // 路線出事：揀一個唔經受影響路線嘅方案
+    const bad = badLines(), withLegs = opts.filter(o => o.legs.length), hit = o => o.legs.map(legLine).filter(k => bad.has(k));
+    const best = withLegs[0], ok = withLegs.find(o => !hit(o).length);
+    const o = ok || best || opts[0];
+    smart = {t, o, from, avoided: best && ok && best !== ok ? hit(best) : null, stuck: best && !ok ? hit(best) : null};
   }
-  if (smart && t && S.here && smart.t.label === t.label) {
+  if (smart && t && (S.here || t.habit) && smart.t.label === t.label) {
     const o = smart.o;
     if (!o) sm.innerHTML = `<div class="smart"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p><h2>${L('搵唔到路線', 'No trip found')}</h2></div>`;
     else {
       const lv = mins(o.leaveT);
-      sm.innerHTML = `<div class="smart"><p class="lbl">${L('去', 'To')} ${esc(t.label)}</p>
+      const h = t.habit, warn = smart.avoided ? L(`${smart.avoided.map(lineText).join('、')} 有交通消息，已改用其他路線`, `${smart.avoided.map(lineText).join(', ')} disrupted — rerouted`)
+        : smart.stuck ? L(`${smart.stuck.map(lineText).join('、')} 有交通消息，可能要預多啲時間`, `${smart.stuck.map(lineText).join(', ')} disrupted — allow extra time`) : '';
+      sm.innerHTML = `<div class="smart"><p class="lbl">${L('去', 'To')} ${esc(t.label)}${h ? ` <span class="habit-tag">${L(`已學識 · ${h.wk ? '平日' : '週末'}通常 ${fmtMin(h.m)} 出門`, `Learned · usually ${fmtMin(h.m)}`)}</span>` : ''}</p>
+        ${warn ? `<p class="wx wx-red" role="status"><span>${esc(warn)}</span></p>` : ''}${wxLine()}
         <p class="sm-lbl">${lv > 0 ? L('距離出門仲有', 'Leave in') : L('而家出門', 'Leave now')}</p>
         <div class="sm-big">${flaps(lv > 0 ? String(lv).padStart(2, '0') : '00', 'smart')}<span>${L('分', 'min')}</span></div>
         <p class="sm-l">${L(`${hhmm(o.leaveT)} 出門 · 約 ${hhmm(o.arriveT)} 到`, `Leave ${hhmm(o.leaveT)} · arrive ~${hhmm(o.arriveT)}`)}</p>
@@ -69,7 +87,9 @@ function drawSettings(){
     <div class="set-r"><span>${L('語言', 'Language')}</span><div class="seg">${[['zh', '中文'], ['en', 'English']].map(([k, t]) => `<button type="button" data-a="lang" data-v="${k}" aria-pressed="${S.set.lang === k}">${t}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('字體大小', 'Text size')}<small class="set-s">${L('長者或者睇唔清可以揀大字', 'Larger text for easier reading')}</small></span><div class="seg">${[['normal', '標準', 'Normal'], ['large', '大', 'Large'], ['xl', '特大', 'X-Large']].map(([v, zh, en]) => `<button type="button" data-a="text" data-v="${v}" aria-pressed="${S.set.text === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('步速（計出門時間用）', 'Walking pace')}</span><div class="seg">${sp.map(([v, zh, en]) => `<button type="button" data-a="walk" data-v="${v}" aria-pressed="${S.set.walk === v}">${L(zh, en)}</button>`).join('')}</div></div>
+    <div class="set-r"><span>${L('出門預留：落樓＋等𨋢', 'Getting out: stairs + lift')}<small class="set-s">${L('由屋企或者公司出發先計，出門時間會早返呢幾分鐘。住高層、返工時間等𨋢耐就揀多啲。', 'Added when leaving home or work. Pick more for high floors or rush-hour lifts.')}</small></span><div class="seg">${[0, 2, 3, 5, 8].map(v => `<button type="button" data-a="door" data-v="${v}" aria-pressed="${(S.set.door ?? 3) === v}">${v ? v + L(' 分', ' min') : L('唔使', 'None')}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('出門同落車通知', 'Leave & alight alerts')}</span><button class="btn-d sm" data-a="notif" type="button">${'Notification' in window ? (Notification.permission === 'granted' ? L('已開啟', 'On') : L('開啟', 'Turn on')) : L('唔支援', 'Unsupported')}</button></div>
+    <div class="set-r"><span>${L('自動學識通勤習慣', 'Learn my commute')}<small class="set-s">${L('用出門倒數 3 日或以上，就會喺平時出門前自動出建議。紀錄只存喺呢部機。', 'After 3+ days of countdowns, suggests your usual trip automatically. Stored on this device only.')}</small>${learned().map(g => `<small class="set-s habit-l">· ${esc(describe(g))}</small>`).join('')}</span><div class="sh-inline"><div class="seg">${[['on', '開', 'On'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="learn" data-v="${v}" aria-pressed="${S.set.learn === v}">${L(zh, en)}</button>`).join('')}</div><button class="btn-d sm" data-a="forget" type="button">${L('清除紀錄', 'Clear')}</button></div></div>
     <div class="set-r"><span>${L('螢幕常亮（出門倒數時）', 'Keep screen on (countdown)')}<small class="set-s">${L('等車同搭車先開，電量低過 20% 自動停', 'Only while waiting or riding; pauses under 20% battery')}</small></span><div class="seg">${[['auto', '自動', 'Auto'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="awake" data-v="${v}" aria-pressed="${S.set.awake === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('自動更新路線資料（約 8 MB）', 'Auto-update route data (~8 MB)')}<small class="set-s">${L('上次更新：', 'Last updated: ')}${store.get('dbTime', 0) ? new Date(store.get('dbTime', 0)).toLocaleDateString('zh-HK', {timeZone: 'Asia/Hong_Kong'}) + ' ' + hhmm(store.get('dbTime', 0)) : '—'}${S.set.data === 'wifi' && !('connection' in navigator) ? L(' · 呢部機分唔到 Wi-Fi，會照常更新', ' · this device can’t tell Wi-Fi apart') : ''}</small></span><div class="seg">${[['auto', '每日', 'Daily'], ['wifi', '只限 Wi-Fi', 'Wi-Fi only'], ['manual', '手動', 'Manual']].map(([v, zh, en]) => `<button type="button" data-a="data" data-v="${v}" aria-pressed="${S.set.data === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('路線資料', 'Route data')}</span><div class="sh-inline"><button class="btn-d sm" data-a="upd" type="button">${L('而家更新', 'Update now')}</button><button class="btn-d sm" data-a="clear" type="button">${L('清除重下載', 'Reset')}</button></div></div>
@@ -137,6 +157,9 @@ function onClick(e){
   else if (a === 'walk') { S.set.walk = +b.dataset.v; saveSettings(); drawSettings(); toast(L('已更新步速', 'Pace updated')); }
   else if (a === 'notif') { if ('Notification' in window) Notification.requestPermission().then(() => drawSettings()); }
   else if (a === 'clear') { clearData().then(() => location.reload()); }
+  else if (a === 'door') { S.set.door = +b.dataset.v; saveSettings(); smartAt = 0; drawSettings(); toast(L('已更新出門預留時間', 'Updated')); }
+  else if (a === 'learn') { S.set.learn = b.dataset.v; saveSettings(); scheduleHabitNotifs(); smartAt = 0; draw(true); }
+  else if (a === 'forget') { clearHabits(); scheduleHabitNotifs(); smartAt = 0; draw(true); toast(L('已清除通勤紀錄', 'Commute history cleared')); }
   else if (a === 'awake') { S.set.awake = b.dataset.v; saveSettings(); drawSettings(); }
   else if (a === 'text') { S.set.text = b.dataset.v; saveSettings(); applyTextSize(); drawSettings(); }
   else if (a === 'data') { S.set.data = b.dataset.v; saveSettings(); drawSettings(); }

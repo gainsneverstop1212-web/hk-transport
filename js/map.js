@@ -8,12 +8,14 @@ export function mapLib(){
   // App 版（scripts/build-app.sh 打包）用內置嘅 Leaflet，冇網都開到地圖；網頁版用 CDN
   const base = window.HKGO_BUNDLED ? 'vendor/leaflet/' : 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
   loading = new Promise((res, rej) => {
+    // 等埋 CSS 載入先畫地圖：Leaflet 嘅 CSS 未到，手機一隻手指拖會變咗碌成個頁面
     const css = document.createElement('link');
+    const cssReady = new Promise(ok => { css.onload = ok; css.onerror = ok; setTimeout(ok, 4000); });
     css.rel = 'stylesheet'; css.href = base + 'leaflet.min.css';
     document.head.appendChild(css);
     const s = document.createElement('script');
     s.src = base + 'leaflet.min.js';
-    s.onload = () => window.L ? res(window.L) : rej(new Error('leaflet'));
+    s.onload = () => window.L ? cssReady.then(() => res(window.L)) : rej(new Error('leaflet'));
     s.onerror = () => { loading = null; rej(new Error('leaflet')); };
     document.head.appendChild(s);
   });
@@ -23,7 +25,9 @@ export function mapLib(){
 export async function makeMap(el, center, zoom = 17){
   const L = await mapLib();
   if (el._map) { el._map.remove(); el._map = null; }
-  const m = L.map(el, {zoomControl: false, minZoom: 10, maxZoom: 19, maxBounds: [[22.05, 113.75], [22.65, 114.55]], attributionControl: true})
+  // 一隻手指拖動、兩隻手指縮放（明確開啟，唔靠預設）
+  const m = L.map(el, {zoomControl: false, minZoom: 10, maxZoom: 19, maxBounds: [[22.05, 113.75], [22.65, 114.55]], attributionControl: true,
+    dragging: true, touchZoom: true, doubleClickZoom: true, scrollWheelZoom: true, inertia: true, bounceAtZoomLimits: false})
     .setView([center.lat, center.lng], zoom);
   m.attributionControl.setPrefix(false);
   L.tileLayer('https://mapapi.geodata.gov.hk/gs/api/v1.0.0/xyz/basemap/WGS84/{z}/{x}/{y}.png', {
