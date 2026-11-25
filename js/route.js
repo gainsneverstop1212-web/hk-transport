@@ -298,6 +298,9 @@ export function openRoute(key, focusStop){
         to: alight != null ? {label: stopName(stops[alight]), ...stopLoc(stops[alight])} : null});
     } else tb.hidden = true;
     if (map && line) drawMarks();
+    // 頁頂「最近你」嗰粒掣順便顯示下一班幾時到：唔使碌落去搵
+    const nc = pg.querySelector('[data-near]');
+    if (nc && sel === nearest && etas) { const n0 = etas.list.find(e => mins(e.t) >= 0); nc.innerHTML = `${icon.pin} ${L('最近你：', 'Nearest: ')}${esc(stopName(stops[nearest]))}${n0 ? ' · ' + (mins(n0.t) <= 0 ? L('即將到', 'due now') : mins(n0.t) >= 60 ? hhmm(n0.t) : mins(n0.t) + L(' 分鐘', ' min')) : ''}`; }
   }
   async function loadEta(){
     if (sel < 0) return;
@@ -334,7 +337,7 @@ export function openRoute(key, focusStop){
       map = await makeMap(pg.querySelector('#rmap'), pts[Math.max(0, sel)] || pts[0], 15);
       line = window.L.polyline(pts.map(p => [p.lat, p.lng]), {color: col || '#ffc917', weight: 5, opacity: .9}).addTo(map);
       if (S.here) window.L.marker([S.here.lat, S.here.lng], {icon: youIcon(), interactive: false}).addTo(map);
-      if (sel < 0 || rail) map.fitBounds(line.getBounds(), {padding: [20, 20]});
+      map.fitBounds(line.getBounds(), {padding: [20, 20]});           // 先睇晒成條路線；撳站先移過去
       drawMarks();
     } catch { pg.querySelector('#rmap').innerHTML = `<p class="loading">${L('地圖載入唔到', 'Map unavailable')}</p>`; }
   }

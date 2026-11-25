@@ -5,12 +5,14 @@ let loading = null;
 export function mapLib(){
   if (window.L) return Promise.resolve(window.L);
   if (loading) return loading;
+  // App 版（scripts/build-app.sh 打包）用內置嘅 Leaflet，冇網都開到地圖；網頁版用 CDN
+  const base = window.HKGO_BUNDLED ? 'vendor/leaflet/' : 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
   loading = new Promise((res, rej) => {
     const css = document.createElement('link');
-    css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+    css.rel = 'stylesheet'; css.href = base + 'leaflet.min.css';
     document.head.appendChild(css);
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    s.src = base + 'leaflet.min.js';
     s.onload = () => window.L ? res(window.L) : rej(new Error('leaflet'));
     s.onerror = () => { loading = null; rej(new Error('leaflet')); };
     document.head.appendChild(s);

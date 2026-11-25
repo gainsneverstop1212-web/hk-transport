@@ -1,5 +1,5 @@
 // 港途 · 附近車站
-import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
+import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
   stopLoc, stopName, bearing, compass, icon, FERRY, toast, now, nextDepAfter} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, setHere, startGps, stopGps, gpsOn, attachPicker, starBtn, toggleFav, isFav, openSheet, closeSheet} from './ui.js';
@@ -120,10 +120,12 @@ function makeGroups(){
       g.cos.add(e.co);
       if (e.co === 'mtr' || e.co === 'lightRail') continue;
       if (e.seq === st.length - 1) continue;
-      let row = g.rows.get(e.key);
-      if (!row) { row = {kind: 'bus', key: e.key, co: e.co, cos: new Set(), route: r.route, dest: r.dest, etas: [], note: '', srcs: []}; g.rows.set(e.key, row); }
+      // 同一條路線、同一個目的地（資料入面有時有大細楷唔同嘅重複 key）：合併成一行
+      const rk = r.route + '|' + (r.dest?.zh || '') + '|' + (r.serviceType ?? '');
+      let row = g.rows.get(rk);
+      if (!row) { row = {kind: 'bus', key: e.key, co: e.co, cos: new Set(), route: r.route, dest: r.dest, etas: [], note: '', srcs: []}; g.rows.set(rk, row); }
       row.cos.add(e.co);
-      if (!row.srcs.some(x => x.co === e.co && x.stop === id)) row.srcs.push({co: e.co, stop: id, seq: e.seq});
+      if (!row.srcs.some(x => x.co === e.co && x.stop === id)) row.srcs.push({co: e.co, stop: id, seq: e.seq, key: e.key});
     }
   }
   groups = gs; lastFetch = 0;
@@ -132,7 +134,7 @@ function makeGroups(){
 
 async function loadGroup(g, memo){
   const jobs = [];
-  for (const row of g.rows.values()) jobs.push(Promise.all(row.srcs.map(s => etaFor(memo, s.co, S.DB.routeList[row.key], s.stop, s.seq))).then(res => {
+  for (const row of g.rows.values()) jobs.push(Promise.all(row.srcs.map(s => etaFor(memo, s.co, S.DB.routeList[s.key || row.key], s.stop, s.seq))).then(res => {
     const ok = res.filter(x => !x.err);
     if (!ok.length && row.etas.length) { row.stale = true; return; }      // 離線：保留上次資料
     row.stale = false; row.err = !ok.length;
@@ -188,7 +190,7 @@ function advice(row, walk){
   if (!ok) return `<span class="adv late">${L(`步行 ${walk} 分鐘，趕唔切`, `${walk} min walk — can't make it`)}</span>`;
   const left = mins(ok.t) - walk;
   const txt = left <= 0 ? L('而家出發', 'Leave now') : L(`${left} 分鐘後出發`, `Leave in ${left} min`);
-  return `<span class="adv go">${ok !== list[0] ? L('下一班：', 'Next: ') : ''}${txt}</span>`;
+  return `<span class="adv go">${ok !== list[0] ? L('趕唔切呢班 · 下一班 ', 'Too late for this one · next: ') : ''}${txt}</span>`;
 }
 function rowHtml(g, row){
   let rt, sub, fid, label;
@@ -210,7 +212,7 @@ function rowHtml(g, row){
   const l0 = live(row)[0], m0 = l0 ? mins(l0.t) : null;
   const etaTxt = l0 ? (m0 <= 0 ? L('即將到站', 'arriving now') : m0 >= 60 ? L(`${hhmm(l0.t)} 到`, `due ${hhmm(l0.t)}`) : L(`${m0} 分鐘後到`, `in ${m0} minutes`)) : (row.note || L('暫無班次', 'no service'));
   return `<div class="row${isFav(fid) ? ' fav' : ''}${row.stale ? ' stale' : ''}" data-row="${esc(fid)}" tabindex="0" role="button" aria-label="${esc(label + ' ' + L('往', 'to') + ' ' + dest + '，' + etaTxt)}">
-    ${rt}<div class="dst"><b>${L('往', 'To')} ${esc(dest)}</b><small>${sub}</small>${advice(row, g.walk)}</div>
+    ${rt}<div class="dst"><b>${L('往', 'To')} ${destHtml(dest)}</b><small>${sub}</small>${advice(row, g.walk)}</div>
     <div class="eta">${etaCell(row, 'e' + fid)}</div>${starBtn(fid, label + ' ' + dest)}</div>`;
 }
 function groupHtml(g, i){
@@ -218,7 +220,10 @@ function groupHtml(g, i){
   const has = r => live(r).length > 0;
   const fid = r => r.kind === 'bus' ? r.key + '@' + r.srcs[0].stop : r.key;
   const next = r => live(r)[0]?.t ?? Infinity;
-  all.sort((a, b) => (isFav(fid(b)) - isFav(fid(a))) || (next(a) - next(b)) || String(a.route || a.line).localeCompare(String(b.route || b.line), 'zh-HK', {numeric: true}));
+  // 固定次序（唔再按到站時間排）：每次更新唔會跳位，撳緊都唔會撳錯
+  const kindOrd = r => r.kind === 'mtr' ? 0 : r.kind === 'lrt' ? 1 : 2;
+  const destOf = r => r.kind === 'mtr' ? (r.dest || '') : nm(r.dest) || '';
+  all.sort((a, b) => (isFav(fid(b)) - isFav(fid(a))) || (kindOrd(a) - kindOrd(b)) || String(a.route || a.line || '').localeCompare(String(b.route || b.line || ''), 'en', {numeric: true}) || destOf(a).localeCompare(destOf(b), 'zh-HK'));
   const lv = all.filter(r => has(r) || isFav(fid(r))), idle = all.filter(r => !has(r) && !isFav(fid(r)));
   const dm = Math.round(g.d);
   const head = `<div class="stop-h"><span class="num">${i + 1}</span><div class="stop-t"><h2>${esc(nm(g.name))}</h2><p>${[...g.cos].map(coTag).join(' ')}${g.heading != null ? ` <span class="dir">${icon.arrow(g.heading)}${L(`往${compass(g.heading)}行`, `heading ${compass(g.heading)}`)}</span>` : ''}</p></div>

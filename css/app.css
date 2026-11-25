@@ -6,7 +6,7 @@
    LAYOUT  手機優先單欄（最闊 760px）；頂部黃色指示牌、底部分頁列 */
 :root{
   color-scheme:dark;
-  --yellow:#ffc917;--ink:#111;--panel:#2a2a2a;--flap:#1f1f1f;--white:#fff;--grey:#8b8b8b;--red:#ff5a4e;--line:#2c2c2c;
+  --yellow:#ffc917;--ink:#111;--panel:#2a2a2a;--flap:#1f1f1f;--white:#fff;--grey:#9d9d9d;--red:#ff5a4e;--line:#2c2c2c;
   --disp:"Barlow Condensed","Noto Sans TC","Arial Narrow",sans-serif;
   --body:Barlow,"Noto Sans TC","Helvetica Neue",Arial,sans-serif;
   --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);
@@ -145,9 +145,9 @@ details.compact>summary::-webkit-details-marker{display:none}
 .co{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .co i{width:8px;height:8px;background:var(--c);display:inline-block}
 .eta{text-align:right;justify-self:end}
-.big{display:flex;gap:2px;justify-content:flex-end;align-items:flex-end}
+.eta .big{display:flex;gap:2px;justify-content:flex-end;align-items:flex-end}
 .eta .big .f{color:var(--yellow);font-size:24px;height:34px;min-width:22px}
-.big .u{font:600 13px/1 var(--disp);color:var(--grey);margin-left:3px;padding-bottom:3px}
+.eta .big .u{font:600 13px/1 var(--disp);color:var(--grey);margin-left:3px;padding-bottom:3px}
 .eta .big.far .f{font-size:17px;min-width:14px;padding:0 1px;height:30px}
 .eta .big.now .f{background:var(--yellow);color:var(--ink);font-size:19px}
 .eta .big.sched .f{color:#d8d8d8;background:#191919;box-shadow:inset 0 0 0 1px #3a3a3a}
@@ -580,3 +580,17 @@ body.paged .trip-pill{top:auto;bottom:calc(84px + var(--sb));right:12px}
 .stops.rail .st-etas span{min-width:0;padding:6px 10px}
 .stops.rail .st-etas b{font-size:20px}
 .dirp small.from{color:#bdbdbd}
+.nw{white-space:nowrap}
+.news.mine{border-left-color:#fff;background:#1d1d1d}.news.mine .news-d{color:var(--yellow);font-weight:600}
+/* 規劃頁：估算標記、地圖、常去地點建議 */
+.est{color:#ffb44d}
+.pmap{height:min(60vh,440px);border:1px solid var(--line);background:#1a1a1a}
+.notice.sugg{margin:10px 0}
+.notice.sugg div{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.opt-x .sh-btns{margin-top:12px}
+.opt-x .sh-btns{grid-template-columns:2fr 1fr}
+.sh-btns .big{font-size:17px;padding:0 10px;white-space:nowrap}
+.sh-btns .big svg{flex:none;width:24px;height:24px}
+/* 大字模式：用 zoom 成個介面一齊放大，排版比例唔變 */
+body{zoom:var(--zoom,1)}
+.bigmap,.rmap,.pmap{zoom:calc(1 / var(--zoom,1))}

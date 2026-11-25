@@ -6,6 +6,8 @@ export const FERRY = new Set(['sunferry', 'fortuneferry', 'hkkf']);
 
 export const $ = id => document.getElementById(id);
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// 目的地名：括號部分唔好拆開兩行（例如「中環(交易廣場)」唔會剩低「場)」喺第二行）
+export const destHtml = s => esc(s).replace(/([(（][^()（）]*[)）])$/, '<span class="nw">$1</span>');
 export const store = {
   get(k, d){ try { const v = localStorage.getItem('hkgo:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v){ try { localStorage.setItem('hkgo:' + k, JSON.stringify(v)); } catch {} },
@@ -16,7 +18,7 @@ export const store = {
 export const S = {
   DB: null, IDX: new Map(), GRID: new Map(), NUMS: new Map(),
   here: null,
-  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto'}, store.get('settings', {})),
+  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto', text: 'normal'}, store.get('settings', {})),
   online: true, lastOk: 0, skew: store.get('skew', 0)
 };
 // 用伺服器時間校正手機時鐘（手機時間唔準都唔會倒數錯）；上次校正值會記低，開 app 第一秒已經準
@@ -34,6 +36,9 @@ export async function syncClockNow(){
   } catch {}
 }
 export const saveSettings = () => store.set('settings', S.set);
+// 大字模式：成個介面按比例放大（長者、視力弱嘅用家）
+export const TEXT_ZOOM = {normal: 1, large: 1.15, xl: 1.3};
+export const applyTextSize = () => { document.documentElement.style.setProperty('--zoom', TEXT_ZOOM[S.set.text] || 1); document.body.classList.toggle('bigtext', S.set.text !== 'normal'); };
 
 /* ---------- 語言 ---------- */
 export const L = (zh, en) => S.set.lang === 'en' ? en : zh;
@@ -65,7 +70,7 @@ const LRT_C = {'505': '#e4002b', '507': '#00a650', '610': '#8a4b1f', '614': '#00
   '506P': '#d6457f', '507P': '#4fbf7a', '610P': '#b5773f', '720': '#1fa59a', 'SPR': '#7a7a7a'};
 export const lrtColor = r => LRT_C[String(r).replace('*', '')] || '#d3a809';
 const LRT_DARK = new Set(['615', '705', '614P', '614']);
-export const lrtTiles = r => { const n = String(r).replace('*', ''); return `<div class="rt ln lr${LRT_DARK.has(n) ? ' dark' : ''}${n.length >= 4 ? ' s4' : ''}" style="--c:${lrtColor(n)}">${[...n].map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`; };
+export const lrtTiles = r => { const n = String(r).replace('*', ''); return `<div class="rt ln lr${LRT_DARK.has(n) ? ' dark' : ''}${n.length >= 4 ? ' s4' : ''}" style="--c:${lrtColor(n)}" role="img" aria-label="${esc(L('輕鐵 ', 'Light Rail ') + n)}">${[...n].map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`; };
 export const coTag = co => `<span class="co"><i style="--c:${coColor(co)}"></i>${esc(coName(co))}</span>`;
 
 /* ---------- 時間 ---------- */
@@ -83,11 +88,12 @@ export function flaps(text, key, cls = ''){
   if (key) prevFlap.set(key, s);
   return [...s].map(c => c === ':' ? '<span class="sep">:</span>' : `<span class="f${cls ? ' ' + cls : ''}${changed ? ' flip' : ''}">${esc(c)}</span>`).join('');
 }
-export const routeTiles = (route, key) => { const n = [...String(route)].length; return `<div class="rt${n >= 5 ? ' s5' : n === 4 ? ' s4' : ''}">${flaps(route, key)}</div>`; };
+// 字粒逐個字分開顯示，讀屏要當一個整體讀（「102」而唔係「一、零、二」）
+export const routeTiles = (route, key) => { const n = [...String(route)].length; return `<div class="rt${n >= 5 ? ' s5' : n === 4 ? ' s4' : ''}" role="img" aria-label="${esc(route)}">${flaps(route, key)}</div>`; };
 // 路線字粒：港鐵用綫名、渡輪用「渡輪」，其他用路線號碼
 export const tilesFor = (r, key) => !r ? routeTiles('?') : r.co[0] === 'mtr' ? lineTiles(r.route) : r.co[0] === 'lightRail' ? lrtTiles(r.route) : FERRY.has(r.co[0]) ? routeTiles(L('渡輪', 'BOAT'), key) : routeTiles(r.route, key);
 export const routeLabel = r => !r ? '' : r.co[0] === 'mtr' ? lineName(r.route) : r.co[0] === 'lightRail' ? L('輕鐵 ', 'LR ') + r.route.replace('*', '') : FERRY.has(r.co[0]) ? coName(r.co[0]) : r.route;
-export const lineTiles = c => `<div class="rt ln${darkText(c) ? ' dark' : ''}" style="--c:${lineColor(c)}">${[...lineShort(c)].slice(0, 3).map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`;
+export const lineTiles = c => `<div class="rt ln${darkText(c) ? ' dark' : ''}" style="--c:${lineColor(c)}" role="img" aria-label="${esc(lineName(c))}">${[...lineShort(c)].slice(0, 3).map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`;
 
 /* ---------- 數據載入 ---------- */
 async function download(cache, onProgress){
@@ -128,6 +134,14 @@ export async function loadDb(onProgress){
     try {
       const j = await cached.clone().json();
       setTimeout(() => refreshDb().catch(() => {}), 8000);   // 背景更新，下次開就用新資料
+      return j;
+    } catch {}
+  }
+  // App 版內置咗一份路線資料：第一次開唔使等下載 8 MB，背景再攞最新版
+  if (window.HKGO_BUNDLED) {
+    try {
+      const j = await fetch('data/routeFareList.min.json').then(r => r.json());
+      setTimeout(() => refreshDb(true).catch(() => {}), 8000);
       return j;
     } catch {}
   }
@@ -193,11 +207,11 @@ function dayIdxAt(off){
 }
 export const dayIdx = () => dayIdxAt(0);
 export const isHoliday = () => dayIdxAt(0) === 0 || dayIdxAt(0) === 6;
-// 今日（以今日零時計分鐘）嘅班次；琴日時間表入面 24:00 之後嘅班次都計埋
-export function todayFreq(r){
+// 某一日（d = 由今日起計第幾日）嘅班次，以嗰日零時計分鐘；前一日時間表入面 24:00 之後嘅班次都計埋
+function freqDay(r, d){
   const out = [];
   for (const off of [0, -1]) {
-    const di = dayIdxAt(off);
+    const di = dayIdxAt(d + off);
     for (const [sd, v] of Object.entries(r.freq || {})) {
       if (String(S.DB.serviceDayMap?.[sd]?.[di]) !== '1') continue;
       for (const [st, x] of Object.entries(v)) {
@@ -209,6 +223,7 @@ export function todayFreq(r){
   }
   return out.sort((a, b) => a.s - b.s);
 }
+export const todayFreq = r => freqDay(r, 0);
 const fmtM = m => { m = ((m % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); };
 export function serviceInfo(r){
   const f = todayFreq(r), td = f.filter(x => x.today);
@@ -217,12 +232,21 @@ export function serviceInfo(r){
   const cur = f.find(x => x.e != null && x.s <= n && n <= x.e);
   return {first: fmtM(first), last: fmtM(last), overnight: last >= 1440, hw: cur ? Math.round(cur.hw / 60) : null};
 }
-// 而家有冇行（有時間表先判斷；冇時間表當有）
-export function runningNow(r){
+// 港鐵、輕鐵冇時間表資料：按一般服務時間估算（大約 01:15–05:45 冇車；機場快綫、各綫首尾班車略有不同）
+const RAIL_CLOSE = 75, RAIL_OPEN = 345;
+const minOfDay = t => { const d = new Date(t + 288e5); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+export const railOpenAt = t => { const m = minOfDay(t); return !(m >= RAIL_CLOSE && m < RAIL_OPEN); };
+// 由 t 開始，下一次港鐵／輕鐵有車嘅時間
+export const railNextOpen = t => railOpenAt(t) ? t : t + (RAIL_OPEN - minOfDay(t)) * 60000 - (t % 60000);
+// 某個時間有冇行（有時間表先判斷；巴士冇時間表當有；港鐵、輕鐵按服務時間）
+export function runningAt(r, t){
+  const co = r.co?.[0];
+  if (co === 'mtr' || co === 'lightRail') return railOpenAt(t);
   if (!r.freq || !Object.keys(r.freq).length) return true;
-  const n = nowM();
-  return todayFreq(r).some(x => n >= x.s - 45 && n <= (x.e ?? x.s) + 45);
+  const base = hkMidnight(), d = Math.floor((t - base) / 864e5), m = Math.floor((t - base - d * 864e5) / 60000);
+  return freqDay(r, d).some(x => m >= x.s - 45 && m <= (x.e ?? x.s) + 45);
 }
+export const runningNow = r => runningAt(r, now());
 // 每條路線累積行車時間（分鐘），港鐵按綫路速度 + 停站時間計
 const MTR_SPEED = {AEL: 1450, TCL: 1100, EAL: 950, TML: 850};
 const cumCache = new WeakMap();

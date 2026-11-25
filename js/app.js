@@ -1,5 +1,5 @@
 // 港途 · 開機
-import {S, $, esc, store, L, loadDb, buildIndex, flaps, saveSettings, now, syncClockNow} from './core.js';
+import {S, $, esc, store, L, loadDb, buildIndex, flaps, saveSettings, now, syncClockNow, applyTextSize} from './core.js';
 import {go, setHere, startGps, on} from './ui.js';
 import {initNearby} from './nearby.js';
 import {initRoute} from './route.js';
@@ -17,14 +17,15 @@ const TABS = [
 ];
 
 function shell(){
+  applyTextSize();
   document.documentElement.lang = S.set.lang === 'en' ? 'en' : 'zh-HK';
   document.title = L('港途 · 香港交通到站', 'HK GO · Hong Kong transit');
+  $('brandName').textContent = L('港途', 'HK GO');
   $('brandSub').textContent = L('香港交通到站', 'HK transit');
   $('foot').innerHTML = L('到站時間來自運輸署 DATA.GOV.HK 及各營辦商開放數據，只供參考。路線整合：<a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>；地圖及地址：地政總署、政府地址查詢服務。電車同紅色小巴暫時冇開放實時數據。',
     'Arrival times from the Transport Department (DATA.GOV.HK) and operators’ open data, for reference only. Route data: <a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>; maps and addresses: Lands Department and the Address Lookup Service. Trams and red minibuses have no open real-time data.');
   $('tabs').setAttribute('aria-label', L('主選單', 'Main menu'));
   $('trip').setAttribute('aria-label', L('出門倒數', 'Leave countdown'));
-  $('clock').setAttribute('aria-label', L('現在時間', 'Current time'));
   if ($('bootH')) { $('bootH').textContent = L('正在準備全港路線資料', 'Preparing Hong Kong route data'); $('loadTxt').textContent = L('第一次開要下載約 8 MB，之後每日自動更新一次。', 'First launch downloads about 8 MB; it refreshes once a day.'); }
   $('langBtn').textContent = S.set.lang === 'en' ? '中' : 'EN';
   $('langBtn').setAttribute('aria-label', L('Switch to English', '轉做中文'));
@@ -32,12 +33,16 @@ function shell(){
   $('tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); };
   $('langBtn').onclick = () => { S.set.lang = S.set.lang === 'en' ? 'zh' : 'en'; saveSettings(); location.reload(); };
 }
+let lastHm = '';
 function tick(){
   const hm = new Date(now()).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Hong_Kong'});
+  if (hm === lastHm) return;                       // 每秒檢查，但只喺分鐘轉咗先重畫（時鐘唔會遲過 1 秒）
+  lastHm = hm;
   $('clock').innerHTML = flaps(hm);
+  $('clock').setAttribute('aria-label', L('現在時間 ', 'Time now ') + hm);
 }
 async function boot(){
-  shell(); tick(); setInterval(tick, 10000);
+  shell(); tick(); setInterval(tick, 1000);
   syncClockNow().then(tick);
   const ld = $('loadTxt');
   try {

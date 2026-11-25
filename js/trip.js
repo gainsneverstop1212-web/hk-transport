@@ -19,6 +19,7 @@ export function initTrip(){
 export function startTrip(t){
   if (!t.legs?.length) return;
   if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
+  LN()?.requestPermissions?.().catch?.(() => {});
   trip = {...t, stage: 'prep', li: 0, pick: t.legs.map(() => null), boardedAt: [], leftAt: null, startedAt: now(), alerted: {}};
   save(); start(true);
 }
@@ -35,7 +36,7 @@ function stop(){
   if (layer) { layer = false; back(); }          // 一齊清走返回鍵記錄
   clearInterval(tick); clearInterval(poll); tick = poll = null;
   if (gpsW != null) { navigator.geolocation.clearWatch(gpsW); gpsW = null; }
-  release(); trip = null; store.del('trip');
+  release(); cancelNative(); trip = null; store.del('trip');
   $('trip').hidden = true; $('trip').innerHTML = ''; $('tripPill').hidden = true; shown = false;
   document.body.classList.remove('tripping');
 }
@@ -71,7 +72,29 @@ async function load(){
     if (!res.err || !lists[i]) lists[i] = res;
   }));
   paint();
+  scheduleNative();
 }
+
+/* ---------- App Store 版：用系統通知預約提醒（鎖機、轉咗 app 都會準時響） ---------- */
+// 網頁版冇呢個功能（Capacitor 嘅 LocalNotifications 插件唔存在就乜都唔做）
+const LN = () => window.Capacitor?.Plugins?.LocalNotifications;
+const NIDS = [7101, 7102, 7103, 7104, 7105];
+let nativeSig = '';
+async function scheduleNative(){
+  const ln = LN(); if (!ln || !trip) return;
+  const c = chain(), ev = [];
+  if (trip.stage === 'prep' && c.legs[0]) { const l = trip.legs[0], lv = c.legs[0].boardT - walkOf(0) * 60000; ev.push([lv - 2 * 60000, L('兩分鐘後出門', 'Leave in 2 minutes'), L(`${hhmm(lv)} 出門去 ${stopName(l.board)} 搭 ${rname(l)}`, `Leave ${hhmm(lv)} for ${rname(l)} at ${stopName(l.board)}`)], [lv, L('夠鐘出門！', 'Time to leave!'), L(`行去 ${stopName(l.board)} 搭 ${rname(l)}`, `Walk to ${stopName(l.board)} for the ${rname(l)}`)]); }
+  trip.legs.forEach((l, k) => { if (k >= trip.li && c.legs[k] && l.aseq != null) ev.push([c.legs[k].alightT - 3 * 60000, L('準備落車', 'Get ready to get off'), L(`就快到 ${stopName(l.alight)}`, `Almost at ${stopName(l.alight)}`)]); });
+  const list = ev.filter(([t]) => t > now() + 15000).slice(0, NIDS.length);
+  const sig = list.map(([t]) => Math.round(t / 60000)).join(',');
+  if (sig === nativeSig) return;                     // 時間冇變（以分鐘計）就唔使重新預約
+  nativeSig = sig;
+  try {
+    await ln.cancel({notifications: NIDS.map(id => ({id}))});
+    if (list.length) await ln.schedule({notifications: list.map(([t, title, body], k) => ({id: NIDS[k], title, body, schedule: {at: new Date(t - S.skew), allowWhileIdle: true}}))});
+  } catch {}
+}
+function cancelNative(){ nativeSig = ''; try { LN()?.cancel({notifications: NIDS.map(id => ({id}))}); } catch {} }
 
 /* ---------- 計時間 ---------- */
 const walkOf = i => i === 0 ? trip.walk0 : (trip.legs[i].walk || 0);

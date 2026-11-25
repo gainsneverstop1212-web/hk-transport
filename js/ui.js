@@ -102,15 +102,22 @@ export function go(tab){
 
 /* ---------- 地點搜尋 ---------- */
 // 香港人常用叫法：code = 港鐵站；q = 用嚟查地址嘅全名
+// pt = 地標本身嘅位置（大學、商場）：搜尋時排第一，唔使喺一堆大樓名入面揀
 const ALIAS = [
-  [['理大', 'polyu'], {q: '香港理工大學'}], [['港大', 'hku'], {code: 'HKU', zh: '香港大學站（港大）', en: 'HKU Station'}],
-  [['中大', 'cuhk'], {code: 'UNI', zh: '大學站（中大）', en: 'University Station (CUHK)'}], [['科大', 'hkust', 'ust'], {q: '香港科技大學'}],
-  [['城大', 'cityu'], {q: '香港城市大學'}], [['浸大', 'hkbu'], {q: '香港浸會大學'}], [['教大', 'eduhk'], {q: '香港教育大學'}],
-  [['嶺大', 'lingnan'], {q: '嶺南大學'}], [['都大', 'hkmu'], {q: '香港都會大學'}],
+  [['理大', 'polyu', '理工大學', '香港理工大學'], {q: '香港理工大學', pt: [22.3045, 114.1797], zh: '香港理工大學（理大）', en: 'PolyU'}], [['港大', 'hku'], {code: 'HKU', zh: '香港大學站（港大）', en: 'HKU Station'}],
+  [['中大', 'cuhk'], {code: 'UNI', zh: '大學站（中大）', en: 'University Station (CUHK)'}], [['科大', 'hkust', 'ust', '科技大學'], {q: '香港科技大學', pt: [22.3363, 114.2634], zh: '香港科技大學（科大）', en: 'HKUST'}],
+  [['城大', 'cityu', '城市大學'], {q: '香港城市大學', pt: [22.3366, 114.1724], zh: '香港城市大學（城大）', en: 'CityU'}], [['浸大', 'hkbu', '浸會大學'], {q: '香港浸會大學', pt: [22.3398, 114.1820], zh: '香港浸會大學（浸大）', en: 'HKBU'}],
+  [['教大', 'eduhk', '教育大學'], {q: '香港教育大學', pt: [22.4688, 114.1944], zh: '香港教育大學（教大）', en: 'EdUHK'}],
+  [['嶺大', 'lingnan', '嶺南大學'], {q: '嶺南大學', pt: [22.4100, 113.9785], zh: '嶺南大學（嶺大）', en: 'Lingnan University'}], [['都大', 'hkmu', '都會大學'], {q: '香港都會大學', pt: [22.3165, 114.1806], zh: '香港都會大學（都大）', en: 'HKMU'}],
+  [['朗豪坊', 'langham place'], {q: '朗豪坊', pt: [22.3179, 114.1685], zh: '朗豪坊', en: 'Langham Place'}], [['又一城', 'festival walk'], {q: '又一城', pt: [22.3373, 114.1748], zh: '又一城', en: 'Festival Walk'}],
+  [['新城市廣場', '新城市', 'new town plaza'], {q: '新城市廣場', pt: [22.3820, 114.1890], zh: '新城市廣場', en: 'New Town Plaza'}], [['apm'], {q: 'APM', pt: [22.3121, 114.2253], zh: 'APM（觀塘）', en: 'APM'}],
+  [['太古廣場', 'pacific place'], {q: '太古廣場', pt: [22.2776, 114.1652], zh: '太古廣場', en: 'Pacific Place'}], [['圓方', 'elements'], {q: '圓方', pt: [22.3045, 114.1612], zh: '圓方', en: 'Elements'}],
+  [['山頂', 'the peak', 'peak'], {q: '山頂', pt: [22.2711, 114.1497], zh: '山頂（凌霄閣）', en: 'The Peak'}], [['天星碼頭', 'star ferry'], {q: '天星碼頭', pt: [22.2936, 114.1686], zh: '尖沙咀天星碼頭', en: 'Star Ferry (Tsim Sha Tsui)'}],
+  [['高鐵站', '西九龍站', 'west kowloon station'], {q: '香港西九龍站', pt: [22.3043, 114.1660], zh: '香港西九龍站（高鐵）', en: 'Hong Kong West Kowloon Station'}],
   [['機場', '赤鱲角', 'airport'], {code: 'AIR', zh: '機場（客運大樓）', en: 'Airport (Terminal)'}],
   [['迪士尼', 'disney'], {code: 'DIS', zh: '迪士尼（港鐵站）', en: 'Disneyland Resort'}], [['海洋公園', 'ocean park'], {code: 'OCP', zh: '海洋公園站', en: 'Ocean Park Station'}],
   [['會展', 'hkcec'], {code: 'EXC', zh: '會展站', en: 'Exhibition Centre Station'}], [['啟德', 'kai tak'], {code: 'KAT', zh: '啟德站', en: 'Kai Tak Station'}],
-  [['ifc', '國金'], {q: '國際金融中心'}], [['時代廣場', 'times square'], {q: '時代廣場'}], [['海港城', 'harbour city'], {q: '海港城'}]
+  [['ifc', '國金'], {q: '國際金融中心', pt: [22.2856, 114.1589], zh: '國際金融中心（IFC）', en: 'IFC'}], [['時代廣場', 'times square'], {q: '時代廣場', pt: [22.2783, 114.1822], zh: '時代廣場', en: 'Times Square'}], [['海港城', 'harbour city'], {q: '海港城', pt: [22.2976, 114.1686], zh: '海港城', en: 'Harbour City'}]
 ];
 const aliasOf = q => { const k = q.trim().toLowerCase(); const a = ALIAS.find(([ks]) => ks.includes(k)); return a ? a[1] : null; };
 export function searchStops(q, limit = 8){
@@ -182,18 +189,28 @@ export function attachPicker(input, box, onPick, opt = {}){
   input.addEventListener('input', () => {
     clearTimeout(tq);
     const q = input.value, my = ++seq, al = aliasOf(q);
-    const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, ...S.DB.stopList[al.code].location}] : [];
+    const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, ...S.DB.stopList[al.code].location}]
+      : al?.pt ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, lat: al.pt[0], lng: al.pt[1]}] : [];
     const stops = searchStops(al?.q || q, 10);
     const wantPlaces = opt.places && (al?.q || q).trim().length >= 2;
     draw(alias, stops, [], wantPlaces);
     if (wantPlaces) tq = setTimeout(async () => { const p = await searchPlaces(al?.q || q); if (my === seq) draw(alias, stops, p, false); }, 350);
   });
-  input.addEventListener('focus', () => { if (!input.value) draw([], [], [], false); });
+  let picked = false;
+  input.addEventListener('focus', () => { picked = false; if (!input.value) draw([], [], [], false); else input.select?.(); });
+  // 打咗字但冇揀建議就離開：還原返而家用緊嘅地點名，免得畫面顯示 A、實際計緊 B
+  if (opt.current) input.addEventListener('blur', () => setTimeout(() => {
+    if (picked || document.activeElement === input) return;
+    const cur = opt.current() || '', typed = input.value.trim();
+    if (typed !== cur) { input.value = cur; if (typed) toast(L('請喺建議清單揀一個地點', 'Pick a place from the suggestions')); }
+    box.classList.remove('on');
+  }, 300));
   input.addEventListener('keydown', e => { if (e.key === 'Escape') box.classList.remove('on'); if (e.key === 'Enter') box.querySelector('button')?.click(); });
   box.addEventListener('click', e => {
     const b = e.target.closest('button[data-i]'); if (!b) return;
     const x = list[+b.dataset.i];
+    picked = true;
     box.classList.remove('on'); input.value = opt.keep ? nm(x.name) : ''; input.blur();
-    onPick({lat: x.lat, lng: x.lng, label: nm(x.name), kind: x.kind});
+    onPick({lat: x.lat, lng: x.lng, label: nm(x.name), name: x.name, kind: x.kind});
   });
 }

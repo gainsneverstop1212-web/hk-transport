@@ -1,5 +1,5 @@
 // 港途 · 常用：智能主頁、常用地點、收藏路線、設定
-import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast} from './core.js';
+import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast, applyTextSize} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPicker} from './ui.js';
 import {planTrip, toTrip, legChips, planTo} from './plan.js';
@@ -67,6 +67,7 @@ function drawSettings(){
   const sp = [[60, '慢', 'Slow'], [75, '正常', 'Normal'], [90, '快', 'Fast']];
   $('setl').innerHTML = `
     <div class="set-r"><span>${L('語言', 'Language')}</span><div class="seg">${[['zh', '中文'], ['en', 'English']].map(([k, t]) => `<button type="button" data-a="lang" data-v="${k}" aria-pressed="${S.set.lang === k}">${t}</button>`).join('')}</div></div>
+    <div class="set-r"><span>${L('字體大小', 'Text size')}<small class="set-s">${L('長者或者睇唔清可以揀大字', 'Larger text for easier reading')}</small></span><div class="seg">${[['normal', '標準', 'Normal'], ['large', '大', 'Large'], ['xl', '特大', 'X-Large']].map(([v, zh, en]) => `<button type="button" data-a="text" data-v="${v}" aria-pressed="${S.set.text === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('步速（計出門時間用）', 'Walking pace')}</span><div class="seg">${sp.map(([v, zh, en]) => `<button type="button" data-a="walk" data-v="${v}" aria-pressed="${S.set.walk === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('出門同落車通知', 'Leave & alight alerts')}</span><button class="btn-d sm" data-a="notif" type="button">${'Notification' in window ? (Notification.permission === 'granted' ? L('已開啟', 'On') : L('開啟', 'Turn on')) : L('唔支援', 'Unsupported')}</button></div>
     <div class="set-r"><span>${L('螢幕常亮（出門倒數時）', 'Keep screen on (countdown)')}<small class="set-s">${L('等車同搭車先開，電量低過 20% 自動停', 'Only while waiting or riding; pauses under 20% battery')}</small></span><div class="seg">${[['auto', '自動', 'Auto'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="awake" data-v="${v}" aria-pressed="${S.set.awake === v}">${L(zh, en)}</button>`).join('')}</div></div>
@@ -123,6 +124,7 @@ function onClick(e){
   else if (a === 'notif') { if ('Notification' in window) Notification.requestPermission().then(() => drawSettings()); }
   else if (a === 'clear') { clearData().then(() => location.reload()); }
   else if (a === 'awake') { S.set.awake = b.dataset.v; saveSettings(); drawSettings(); }
+  else if (a === 'text') { S.set.text = b.dataset.v; saveSettings(); applyTextSize(); drawSettings(); }
   else if (a === 'data') { S.set.data = b.dataset.v; saveSettings(); drawSettings(); }
   else if (a === 'upd') {
     if (onCellular() && !confirmCell) { confirmCell = true; toast(L('你似乎用緊流動數據，要用約 8 MB；再撳一次確認', 'You seem to be on mobile data (~8 MB) — tap again to confirm'), 4500); return; }

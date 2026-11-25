@@ -1,11 +1,12 @@
 // 港途 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
-import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, rideMin, cumTimes, avgWait, runningNow, legFare, mtrFare, money, stopLoc, stopName,
-  hhmm, mins, now, toast, nextDepAfter, isMtrStation, tilesFor, routeLabel, routeTiles, lineTiles, coName, lineName, icon} from './core.js';
+import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, rideMin, cumTimes, avgWait, runningAt, railOpenAt, railNextOpen, legFare, mtrFare, money, stopLoc, stopName,
+  hhmm, mins, now, toast, nextDepAfter, isMtrStation, tilesFor, routeLabel, routeTiles, lineTiles, coName, lineName, lineColor, lrtColor, coColor, icon, FERRY} from './core.js';
 import {cycle, etaFor} from './eta.js';
-import {attachPicker, go, on} from './ui.js';
+import {attachPicker, go, on, places, savePlaces, openSheet} from './ui.js';
+import {makeMap, pin} from './map.js';
 import {startTrip} from './trip.js';
 
-const R_END = 600, R_XFER = 320, MAX_RIDES = 4;
+const R_END = 600, R_END_WIDE = 850, R_XFER = 320, MAX_RIDES = 4, MIN_OPTS = 3;
 const xferCache = new Map();
 // 轉車可以行去嘅站：最近 16 個，另外範圍內所有港鐵／輕鐵站一定計（巴士總站附近站多，唔好擠走鐵路站）
 const isRail = id => (S.IDX.get(id) || []).some(e => e.co === 'mtr' || e.co === 'lightRail');
@@ -85,13 +86,27 @@ const estOf = o => { let t = o.walk0 + o.walkEnd + (o.legs.length - 1) * 2; for 
 
 const yieldUI = () => new Promise(r => setTimeout(r, 0));
 const planCache = new Map();
-const ckey = (a, b) => [a.lat, a.lng, b.lat, b.lng].map(x => x.toFixed(4)).join(',');
-// 搜尋結果（未計實時）記 10 分鐘：每分鐘自動更新、轉排序、揀第二班都唔使重新計一次
-export async function staticPlan(from, to, onStep){
-  const k = ckey(from, to), hit = planCache.get(k);
+const ckey = (a, b, t, r) => [a.lat, a.lng, b.lat, b.lng].map(x => x.toFixed(4)).join(',') + '@' + Math.floor(t / 1800e3) + '/' + r;
+// 某個時間冇行嘅路線（例如凌晨嘅日間巴士、港鐵）：搜尋時唔考慮，免得叫人搭冇開嘅車
+const banCache = new Map();
+function bannedAt(t){
+  const b = Math.floor(t / 900e3);
+  if (!banCache.has(b)) {
+    const out = new Set();
+    for (const [key, r] of Object.entries(S.DB.routeList)) if (!runningAt(r, t) && !runningAt(r, t + 1800e3)) out.add(key);
+    banCache.clear(); banCache.set(b, out);
+  }
+  return banCache.get(b);
+}
+let railKeyList = null;
+const railKeys = () => railKeyList || (railKeyList = Object.entries(S.DB.routeList).filter(([, r]) => r.co[0] === 'mtr' || r.co[0] === 'lightRail').map(([k]) => k));
+// 搜尋結果（未計實時）記 10 分鐘：每分鐘自動更新、揀第二班都唔使重新計一次
+export async function staticPlan(from, to, onStep, t0 = now(), radius = R_END){
+  const k = ckey(from, to, t0, radius), hit = planCache.get(k);
   if (hit && Date.now() - hit.t < 600000) return hit.res.map(o => ({...o, legs: o.legs.map(l => ({...l}))}));
-  const O = stopsWithin(from, R_END).filter(x => S.IDX.has(x.id));
-  const D = stopsWithin(to, R_END).filter(x => S.IDX.has(x.id));
+  const ban = bannedAt(t0);
+  const O = stopsWithin(from, radius).filter(x => S.IDX.has(x.id));
+  const D = stopsWithin(to, radius).filter(x => S.IDX.has(x.id));
   const out = new Map();
   const add = o => { if (!o || !o.legs.length) return; const sg = sigOf(o.legs); o.est = estOf(o); const x = out.get(sg); if (!x || o.est < x.est) out.set(sg, o); };
   if (O.length && D.length) {
@@ -99,7 +114,7 @@ export async function staticPlan(from, to, onStep){
     // 1) 所有直達：每條路線喺最近嘅上車站上車
     const seen = new Set();
     for (const {id, d} of O) for (const e of S.IDX.get(id)) {
-      const k = e.key + e.co; if (seen.has(k)) continue;
+      const k = e.key + e.co; if (seen.has(k) || ban.has(e.key)) continue;
       const r = rt(e.key), st = r.stops[e.co];
       let bestJ = -1, bestW = Infinity;
       for (let j = e.seq + 1; j < st.length; j++) if (dMap.has(st[j])) { const w = endWalk(st[j], dMap.get(st[j])) + rideMin(r, e.co, e.seq, j); if (w < bestW) { bestW = w; bestJ = j; } }
@@ -117,13 +132,21 @@ export async function staticPlan(from, to, onStep){
       for (const x of c.slice(0, 30)) { const o = rebuild(best, x.k, x.sid, x.dd); if (o && o.legs.length > 1) { add(o); got.push(o); } }
       return got;
     };
-    const first = harvest(raptor(O, dMap, null));
+    const first = harvest(raptor(O, dMap, ban));
     const top = first.sort((a, b) => estOf(a) - estOf(b))[0];
-    if (top) for (const l of top.legs.slice(0, 2)) { await yieldUI(); harvest(raptor(O, dMap, new Set([l.key]))); }
+    if (top) for (const l of top.legs.slice(0, 2)) { await yieldUI(); harvest(raptor(O, dMap, new Set([...ban, l.key]))); }
+    // 唔搭港鐵嘅後備方案：好多人寧願慢少少都要平啲、或者有位坐
+    if (top && top.legs.some(l => l.co === 'mtr')) { await yieldUI(); harvest(raptor(O, dMap, new Set([...ban, ...railKeys()]))); }
   }
-  const res = [...out.values()].filter(o => !pointless(o, from, to));
+  let res = [...out.values()].filter(o => !pointless(o, from, to));
+  // 方案太少（例如目的地附近冇直達站）：擴大起點、終點嘅搜尋範圍再搵一次
+  if (res.length < MIN_OPTS && radius === R_END) {
+    const more = await staticPlan(from, to, null, t0, R_END_WIDE);
+    const sig = new Set(res.map(o => sigOf(o.legs)));
+    res = res.concat(more.filter(o => !o.walkOnly && !sig.has(sigOf(o.legs))));
+  }
   const d = dist(from, to);
-  if (d < 1500) res.push({legs: [], walk0: walkMin(d), walkEnd: 0, est: walkMin(d), walkOnly: true});
+  if (d < 1500 && radius === R_END) res.push({legs: [], walk0: walkMin(d), walkEnd: 0, est: walkMin(d), walkOnly: true});
   res.sort((a, b) => a.est - b.est);
   planCache.set(k, {t: Date.now(), res});
   if (planCache.size > 20) planCache.delete(planCache.keys().next().value);
@@ -148,18 +171,25 @@ async function refine(o, memo, at){
     const res = future ? {list: [], note: '', err: false} : await etaFor(memo, l.co, r, l.board, l.bseq);
     const c = res.list.find(e => e.t >= t - 30000);
     let boardT, live = false;
+    const rail = l.co === 'mtr' || l.co === 'lightRail';
     if (c) { boardT = c.t; live = !c.sched; }
-    else {
-      // 冇實時班次：用時間表搵下一班（例如凌晨就用首班車），搵唔到先當冇車
+    else if (rail) {
+      // 港鐵、輕鐵冇時間表：收咗車（大約 01:15–05:45）就等到頭班車；等超過 90 分鐘當冇車
+      const open = railNextOpen(t);
+      if (open - t > 90 * 60000) o.dead = true;
+      boardT = Math.max(t, open) + avgWait(r, l.co) * 60000;
+      o.unsure = true;
+    } else {
+      // 冇實時班次：用時間表搵下一班，等太耐（超過 2.5 小時）當冇車
       const tt = nextDepAfter(r, l.co, l.bseq, t - 30000);
-      if (tt && tt - t < 4 * 3600e3) boardT = tt;
-      else if (future && !(r.freq && Object.keys(r.freq).length)) boardT = t + avgWait(r, l.co) * 60000;
-      else if (runningNow(r) && !(res.note && !res.err && !res.list.length)) boardT = t + avgWait(r, l.co) * 60000;
+      if (tt && tt - t < 2.5 * 3600e3) boardT = tt;
+      else if (!(r.freq && Object.keys(r.freq).length) && !(res.note && !res.err && !res.list.length)) boardT = t + avgWait(r, l.co) * 60000;
+      else if (runningAt(r, t) && !(res.note && !res.err && !res.list.length)) boardT = t + avgWait(r, l.co) * 60000;
       else { o.dead = true; boardT = t + avgWait(r, l.co) * 60000; }
       o.unsure = true;
     }
     const ride = rideMin(r, l.co, l.bseq, l.aseq) * 60000;
-    o.times.push({boardT, live, alightT: boardT + ride});
+    o.times.push({boardT, live, alightT: boardT + ride, plat: c?.plat || null});
     t = boardT + ride;
   }
   o.arriveT = t + o.walkEnd * 60000;
@@ -185,14 +215,18 @@ export function fareGroups(legs){
   }
   return out;
 }
+// 「最早到」：如果兩個方案相差唔夠 4 分鐘，有實時到站嘅排先（估計班次嘅時間會變）
 const SORTS = {
-  fast: (a, b) => a.arriveT - b.arriveT || a.legs.length - b.legs.length || (a.unsure - b.unsure),
+  fast: (a, b) => { const d = a.arriveT - b.arriveT; if (Math.abs(d) < 4 * 60000 && !!a.unsure !== !!b.unsure) return a.unsure ? 1 : -1; return d || a.legs.length - b.legs.length; },
   cheap: (a, b) => (a.fareUnknown - b.fareUnknown) || (a.fare - b.fare) || a.arriveT - b.arriveT,
   walk: (a, b) => a.walkSum - b.walkSum || a.arriveT - b.arriveT,
   xfer: (a, b) => a.legs.length - b.legs.length || a.arriveT - b.arriveT
 };
 export async function planTrip(from, to, limit = 6, opt = {}){
-  const cands = await staticPlan(from, to, opt.onStep);
+  const sort = opt.sort || 'fast';
+  // 「幾點前到」：先用預計車程推算大約幾點出發，再逐個方案按時間表計
+  const t0 = opt.arriveBy ? Math.max(now(), opt.arriveBy - 3 * 3600e3) : (opt.at || now());
+  const cands = await staticPlan(from, to, opt.onStep, opt.arriveBy ? Math.max(now(), opt.arriveBy - 3600e3) : t0);
   opt.onStep?.(3);
   const pick = [], perFirst = new Map();
   for (const c of cands) {                                    // 唔好全部都係同一條頭程
@@ -202,14 +236,24 @@ export async function planTrip(from, to, limit = 6, opt = {}){
     if (pick.length >= 24) break;
   }
   const memo = cycle();
-  const t0 = opt.at || now();
-  await Promise.all(pick.map(o => o.walkOnly ? Object.assign(o, {times: [], arriveT: t0 + o.walk0 * 60000, leaveT: t0, fare: 0, walkSum: o.walk0, fareUnknown: false}) : refine(o, memo, opt.at)));
-  const ok = tidy(pick.filter(o => !o.dead));
-  ok.sort(SORTS[opt.sort] || SORTS.fast);
+  const atOf = o => opt.arriveBy ? Math.max(now(), opt.arriveBy - (o.est + 10) * 60000) : opt.at;
+  await Promise.all(pick.map(o => { const a = atOf(o) || now(); return o.walkOnly ? Object.assign(o, {times: [], arriveT: a + o.walk0 * 60000, leaveT: a, fare: 0, walkSum: o.walk0, fareUnknown: false, timetable: !!opt.at || !!opt.arriveBy}) : refine(o, memo, atOf(o)); }));
+  let alive = pick.filter(o => !o.dead);
+  if (opt.arriveBy) {
+    alive = alive.filter(o => o.arriveT <= opt.arriveBy + 60000);
+    // 準時到嘅方案入面，出門最遲嘅排先（可以喺屋企留耐啲）
+    alive.sort((a, b) => b.leaveT - a.leaveT || a.legs.length - b.legs.length);
+    return tidy(alive, 'arrive').slice(0, limit);
+  }
+  let ok = tidy(alive, sort);
+  // 起碼留 3 個方案俾用家揀：唔夠就由被執走嘅方案入面補返
+  if (ok.length < MIN_OPTS) for (const o of [...alive].sort(SORTS[sort] || SORTS.fast)) { if (ok.length >= MIN_OPTS) break; if (!ok.includes(o)) ok.push(o); }
+  ok.sort(SORTS[sort] || SORTS.fast);
   return ok.slice(0, limit);
 }
 // 執走重複同「明顯差啲」嘅方案
-function tidy(list){
+function tidy(list, sort = 'fast'){
+  list = [...list];
   list.sort(SORTS.fast);
   // 1) 同一組上落車站、只係路線唔同（例如 69X 轉 102 / 69X 轉 118）：合併做一個，註明「或搭」
   const groups = new Map(), out = [];
@@ -226,22 +270,29 @@ function tidy(list){
     out.push(o);
   }
   // 2) 比最快方案遲好多先到（多過 35 分鐘或者成程時間嘅 60%）：唔要
+  if (!out.length) return out;
   const best = Math.min(...out.map(o => o.arriveT)), t0 = Math.min(...out.map(o => o.leaveT));
-  const slack = Math.max(35 * 60000, (best - t0) * 0.6);
+  // 「最平」「少行路」容許慢好多（呢啲用家就係肯慢啲換平啲／少行啲）；「最早到」「少轉車」先執走慢太多嘅
+  const slack = sort === 'cheap' || sort === 'walk' || sort === 'arrive' ? Math.max(90 * 60000, (best - t0)) : Math.max(35 * 60000, (best - t0) * 0.6);
   const ok = out.filter(o => o.arriveT - best <= slack);
-  // 3) 有另一個方案轉少啲車、行多唔夠 6 分鐘、遲唔夠 2 分鐘到：呢個方案冇意思
+  // 3) 有另一個方案轉少啲車、行多唔夠 6 分鐘（「少行路」就唔可以行多）、遲唔夠 2 分鐘到：呢個方案冇意思
+  const walkTol = sort === 'walk' ? 0 : 6;
   return ok.filter(b => !ok.some(a => a !== b && a.legs.length < b.legs.length && !a.walkOnly
-    && a.arriveT <= b.arriveT + 2 * 60000 && a.walkSum <= b.walkSum + 6 && (b.fareUnknown || a.fareUnknown || a.fare <= b.fare + 4)));
+    && a.arriveT <= b.arriveT + 2 * 60000 && a.walkSum <= b.walkSum + walkTol && (b.fareUnknown || a.fareUnknown || a.fare <= b.fare + (sort === 'cheap' ? 0 : 4))));
 }
 export const toTrip = (o, from, to) => ({from, to, walk0: o.walk0, walkEnd: o.walkEnd, legs: o.legs.map(l => ({key: l.key, co: l.co, board: l.board, bseq: l.bseq, alight: l.alight, aseq: l.aseq, walk: l.walk || 0}))});
 
 /* ---------- 規劃頁 ---------- */
-let from = null, to = null, results = null, token = 0, open = 0, at = null, sort = store.get('planSort', 'fast'), lastRun = 0, paintCtlRef = () => {};
+// mode：now = 而家出發、later = 揀出發時間、arrive = 幾點前要到
+let from = null, to = null, results = null, token = 0, open = 0, at = null, mode = 'now', sort = store.get('planSort', 'fast'), lastRun = 0, failed = false, paintCtlRef = () => {};
 const hereLabel = () => L('你嘅位置', 'Your location');
+// 地點名：記低中英文，轉語言都顯示啱嘅名
+const labelOf = p => !p ? '' : p.here ? hereLabel() : p.name ? nm(p.name) || p.label : p.label;
 const saveFT = () => store.set('planFT', {from, to, t: Date.now()});
-const SORT_UI = [['fast', '最快', 'Fastest', '最快', 'Fast'], ['cheap', '最平', 'Cheapest', '最平', 'Cheap'], ['walk', '最少步行', 'Least walking', '少行路', 'Walk'], ['xfer', '最少轉車', 'Fewest changes', '少轉車', 'Direct']];
+const SORT_UI = [['fast', '最早到', 'Earliest arrival', '最早到', 'Earliest'], ['cheap', '最平', 'Cheapest', '最平', 'Cheap'], ['walk', '最少步行', 'Least walking', '少行路', 'Walk'], ['xfer', '最少轉車', 'Fewest changes', '少轉車', 'Direct']];
 const localDT = t => { const d = new Date(t + 288e5); return d.toISOString().slice(0, 16); };
 const fromLocalDT = v => Date.parse(v + ':00+08:00');
+const toPoint = (p, here) => ({lat: p.lat, lng: p.lng, label: p.label, name: p.name || null, ...(here ? {here: true, label: hereLabel()} : {})});
 export function initPlan(){
   const v = $('v-plan');
   v.innerHTML = `<div class="wrap">
@@ -249,52 +300,66 @@ export function initPlan(){
     <div class="od">
       <div class="od-f"><span class="od-dot o" aria-hidden="true"></span><div class="search"><input id="pFrom" type="search" autocomplete="off" placeholder="${L('起點', 'From')}" aria-label="${L('起點', 'From')}"><div class="results" id="pFromR"></div></div></div>
       <div class="od-f"><span class="od-dot d" aria-hidden="true"></span><div class="search"><input id="pTo" type="search" autocomplete="off" placeholder="${L('目的地：地方、大廈或者車站', 'To: place, building or stop')}" aria-label="${L('目的地', 'To')}"><div class="results" id="pToR"></div></div></div>
-      <button class="icon-btn swap" id="pSwap" type="button" aria-label="${L('對調', 'Swap')}">${icon.swap}</button>
+      <button class="icon-btn swap" id="pSwap" type="button" aria-label="${L('對調起點同目的地', 'Swap start and destination')}">${icon.swap}</button>
     </div>
     <div class="pctl">
-      <div class="seg" id="pWhen" role="group" aria-label="${L('出發時間', 'Departure time')}"><button type="button" data-w="now">${L('而家出發', 'Leave now')}</button><button type="button" data-w="later">${L('揀時間', 'Pick time')}</button></div>
-      <input type="datetime-local" id="pAt" aria-label="${L('出發日期同時間', 'Departure date and time')}" hidden>
+      <div class="seg" id="pWhen" role="group" aria-label="${L('出發時間', 'Departure time')}"><button type="button" data-w="now">${L('而家出發', 'Leave now')}</button><button type="button" data-w="later">${L('幾點出發', 'Leave at')}</button><button type="button" data-w="arrive">${L('幾點前到', 'Arrive by')}</button></div>
+      <input type="datetime-local" id="pAt" aria-label="${L('日期同時間', 'Date and time')}" hidden>
     </div>
     <div class="seg full" id="pSort" role="group" aria-label="${L('排序', 'Sort')}">${SORT_UI.map(([k, zh, en, sz, se]) => `<button type="button" data-s="${k}" aria-label="${L(zh, en)}">${L(sz, se)}</button>`).join('')}</div>
-    <details class="pinfo"><summary>${L('最多轉 3 次車 · 點計？', 'Up to 3 changes · how it works')}</summary><p>${L('包括巴士、小巴、港鐵、輕鐵。「而家出發」用實時到站計，每分鐘自動更新；揀咗遲啲出發就按時間表估。車費係八達通成人價，未計轉乘優惠。', 'Covers bus, minibus, MTR and Light Rail. Leaving now uses live arrivals and refreshes every minute; later trips use timetables. Fares are adult Octopus, before interchange discounts.')}</p></details>
+    <details class="pinfo"><summary>${L('最多轉 3 次車 · 點計？', 'Up to 3 changes · how it works')}</summary><p>${L('包括巴士、小巴、港鐵、輕鐵同渡輪。「而家出發」用實時到站計，每分鐘自動更新；「幾點出發」「幾點前到」按時間表估。港鐵、輕鐵大約凌晨 1 點至 6 點冇車，嗰段時間會改搵通宵巴士。車費係八達通成人價，未計轉乘優惠。', 'Covers bus, minibus, MTR, Light Rail and ferries. Leave now uses live arrivals and refreshes every minute; Leave at / Arrive by use timetables. MTR and Light Rail stop roughly 1am–6am, so overnight buses are used then. Fares are adult Octopus, before interchange discounts.')}</p></details>
     <div id="pRes"></div></div>`;
   const fi = $('pFrom'), ti = $('pTo');
-  const setFrom = p => { from = p.kind === 'here' ? {lat: p.lat, lng: p.lng, label: hereLabel(), here: true} : {lat: p.lat, lng: p.lng, label: p.label}; fi.value = from.label; saveFT(); run(); };
-  const setTo = p => { to = {lat: p.lat, lng: p.lng, label: p.kind === 'here' ? hereLabel() : p.label}; ti.value = to.label; saveFT(); run(); };
-  attachPicker(fi, $('pFromR'), setFrom, {places: true, saved: true, here: true, keep: true});
-  attachPicker(ti, $('pToR'), setTo, {places: true, saved: true, here: true, keep: true});
-  $('pSwap').onclick = () => { [from, to] = [to, from]; fi.value = from?.label || ''; ti.value = to?.label || ''; saveFT(); run(); };
+  const setFrom = p => { from = toPoint(p, p.kind === 'here'); fi.value = labelOf(from); saveFT(); run(); };
+  const setTo = p => { to = toPoint(p, p.kind === 'here'); ti.value = labelOf(to); saveFT(); run(); };
+  // current：用家打咗字但冇揀建議就離開，格入面會還原返而家用緊嘅地點，唔會「顯示 A、計緊 B」
+  attachPicker(fi, $('pFromR'), setFrom, {places: true, saved: true, here: true, keep: true, current: () => labelOf(from)});
+  attachPicker(ti, $('pToR'), setTo, {places: true, saved: true, here: true, keep: true, current: () => labelOf(to)});
+  $('pSwap').onclick = () => { [from, to] = [to, from]; fi.value = labelOf(from); ti.value = labelOf(to); saveFT(); run(); };
   $('pRes').addEventListener('click', onRes);
   const paintCtl = () => {
-    for (const b of $('pWhen').children) b.setAttribute('aria-pressed', String((b.dataset.w === 'later') === !!at));
-    $('pAt').hidden = !at; if (at) { $('pAt').value = localDT(at); $('pAt').min = localDT(now()); }
+    for (const b of $('pWhen').children) b.setAttribute('aria-pressed', String(b.dataset.w === mode));
+    $('pAt').hidden = mode === 'now'; if (mode !== 'now' && at) { $('pAt').value = localDT(at); $('pAt').min = localDT(now()); }
     for (const b of $('pSort').children) b.setAttribute('aria-pressed', String(b.dataset.s === sort));
+    $('pSort').hidden = mode === 'arrive';                     // 「幾點前到」固定按出門最遲排
   };
-  $('pWhen').onclick = e => { const b = e.target.closest('[data-w]'); if (!b) return; at = b.dataset.w === 'later' ? (at || Math.ceil((now() + 3600e3) / 900e3) * 900e3) : null; paintCtl(); run(); };
+  $('pWhen').onclick = e => {
+    const b = e.target.closest('[data-w]'); if (!b) return;
+    mode = b.dataset.w;
+    at = mode === 'now' ? null : (at || Math.ceil((now() + 3600e3) / 900e3) * 900e3);
+    paintCtl(); run();
+  };
   $('pAt').onchange = e => {
     const v = fromLocalDT(e.target.value); if (isNaN(v)) return;
     // 唔准揀已經過咗嘅時間：自動改返「而家出發」
-    if (v < now() - 60000) { at = null; paintCtl(); toast(L('嗰個時間已經過咗，已改為而家出發', 'That time has passed — switched to Leave now')); run(); return; }
+    if (v < now() - 60000) { at = null; mode = 'now'; paintCtl(); toast(L('嗰個時間已經過咗，已改為而家出發', 'That time has passed — switched to Leave now')); run(); return; }
     at = v; run();
   };
   paintCtlRef = paintCtl;
-  $('pSort').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; sort = b.dataset.s; store.set('planSort', sort); paintCtl(); if (results) { results.sort(SORTS[sort]); open = 0; drawRes(); } };
+  // 轉排序要重新搜尋：唔同排序要搵嘅方案唔同（例如最平嘅巴士方案）
+  $('pSort').onclick = e => { const b = e.target.closest('[data-s]'); if (!b || b.dataset.s === sort) return; sort = b.dataset.s; store.set('planSort', sort); paintCtl(); run(); };
   paintCtl();
   // 起點終點只記 30 分鐘；之後再開就由「你嘅位置」開始，唔會用咗舊起點
   const saved = store.get('planFT', null);
   if (saved && Date.now() - (saved.t || 0) < 1800e3) { from = saved.from; to = saved.to; }
-  on('here', p => { if (!from || from.here) { from = {lat: p.lat, lng: p.lng, label: hereLabel(), here: true}; fi.value = from.label; } });
-  if ((!from || from.here) && S.here) from = {lat: S.here.lat, lng: S.here.lng, label: hereLabel(), here: true};
-  fi.value = from?.label || ''; ti.value = to?.label || '';
+  // 「你嘅位置」（起點或者目的地）跟住 GPS 更新
+  on('here', p => {
+    if (!from || from.here) { from = toPoint(p, true); fi.value = labelOf(from); }
+    if (to?.here) { to = toPoint(p, true); ti.value = labelOf(to); }
+  });
+  if ((!from || from.here) && S.here) from = toPoint(S.here, true);
+  fi.value = labelOf(from); ti.value = labelOf(to);
+  // 重新開 app／轉語言：記得起點終點就即刻計，唔會淨係得兩個格、下面一片空白
+  if (from && to) setTimeout(() => run(), 0);
   // 「而家出發」嘅結果每分鐘用最新實時到站重新計；過咗出門時間嘅方案會自動換走
-  setInterval(() => { if (!$('v-plan').hidden && results && !document.hidden) { if (!at && Date.now() - lastRun > 60000) run(true); else drawRes(); } }, 20000);
+  setInterval(() => { if (!$('v-plan').hidden && results && !document.hidden) { if (mode === 'now' && Date.now() - lastRun > 60000) run(true); else drawRes(); } }, 20000);
 }
 export function planTo(dest, origin){
   go('plan');
   if (origin) from = origin;
-  else if ((!from || from.here) && S.here) from = {lat: S.here.lat, lng: S.here.lng, label: hereLabel(), here: true};
+  else if ((!from || from.here) && S.here) from = toPoint(S.here, true);
   to = dest; saveFT();
-  $('pFrom').value = from?.label || ''; $('pTo').value = to?.label || '';
+  $('pFrom').value = labelOf(from); $('pTo').value = labelOf(to);
   run();
 }
 const STEPS = [['搵附近車站', 'Nearby stops'], ['計轉車路線', 'Connections'], ['攞實時到站', 'Live arrivals']];
@@ -302,28 +367,58 @@ function progressUI(n){
   const el = $('pProg'); if (!el) return;
   el.innerHTML = STEPS.map(([zh, en], i) => `<li class="${i + 1 < n ? 'done' : i + 1 === n ? 'now' : ''}"><span>${i + 1 < n ? '✓' : i + 1}</span>${L(zh, en)}</li>`).join('');
 }
+const setRes = html => { const el = $('pRes'); el._html = html; el.innerHTML = html; };
 async function run(silent){
   if (!from || !to) return;
-  // 揀咗嘅出發時間已經過咗（例如頁面開咗好耐）：改返而家出發
-  if (at && at < now() - 60000) { at = null; paintCtlRef(); if (!silent) toast(L('揀咗嘅時間已經過咗，改為而家出發', 'Chosen time has passed — showing Leave now')); }
+  // 揀咗嘅時間已經過咗（例如頁面開咗好耐）：改返而家出發
+  if (at && at < now() - 60000) { at = null; mode = 'now'; paintCtlRef(); if (!silent) toast(L('揀咗嘅時間已經過咗，改為而家出發', 'Chosen time has passed — showing Leave now')); }
   const my = ++token; lastRun = Date.now();
+  // 起點同目的地喺同一個位置：唔使搭車
+  if (dist(from, to) < 150) {
+    results = null;
+    setRes(`<div class="hero"><h1>${L('你已經喺目的地附近', 'You’re already there')}</h1><p>${L('起點同目的地相距唔夠 150 米，行過去就得。想搵其他地方可以改目的地。', 'Start and destination are under 150 m apart — just walk. Change the destination to plan another trip.')}</p></div>`);
+    return;
+  }
   if (!silent) {
     open = 0;
-    $('pRes').innerHTML = `<div class="loading big"><div class="bigflap" aria-hidden="true">${[...L('計路線', 'PLAN')].map(c => `<span class="f">${c}</span>`).join('')}</div><ol class="psteps" id="pProg"></ol></div>`;
+    setRes(`<div class="loading big"><div class="bigflap" aria-hidden="true">${[...L('計路線', 'PLAN')].map(c => `<span class="f">${c}</span>`).join('')}</div><ol class="psteps" id="pProg"></ol></div>`);
     progressUI(1);
     await new Promise(r => setTimeout(r, 30));               // 等畫面先顯示「計緊」
   }
-  let res = [];
-  try { res = await planTrip(from, to, 6, {at, sort, onStep: n => { if (my === token && !silent) progressUI(n); }}); } catch (e) { console.error(e); }
+  let res = [], err = false;
+  const opt = {sort, onStep: n => { if (my === token && !silent) progressUI(n); }};
+  if (mode === 'arrive') opt.arriveBy = at; else if (mode === 'later') opt.at = at;
+  try { res = await planTrip(from, to, 6, opt); } catch (e) { console.error(e); err = true; }
   if (my !== token) return;                                  // 用家已經改咗起點／目的地，舊結果唔要
+  // 網絡斷咗：自動更新失敗就保留舊結果；用家主動搜尋就講清楚係網絡問題
+  if (err || (!res.length && !navigator.onLine)) { if (silent && results) return; failed = true; results = []; drawRes(); return; }
+  failed = false;
   if (silent && results && results[open]) { const sig = legsSig(results[open]); const k = res.findIndex(o => legsSig(o) === sig); open = k; }
-  results = res; drawRes();
+  results = res;
+  if (!silent) countDest(to);
+  drawRes();
 }
 const legsSig = o => o.legs.map(l => l.key + l.board).join('>');
 
+/* ---------- 常去地點建議：查咗同一個目的地 3 次，問用家使唔使設做常用地點 ---------- */
+const dkey = p => p.lat.toFixed(3) + ',' + p.lng.toFixed(3);
+const isSavedPlace = p => [places.home, places.work, ...(places.custom || [])].some(x => x && dist(x, p) < 250);
+function countDest(p){
+  if (!p || p.here || isSavedPlace(p)) return;
+  const c = store.get('destCount', {}), k = dkey(p);
+  c[k] = (c[k] || 0) + 1; store.set('destCount', c);
+}
+function suggestHtml(){
+  if (!to || to.here || isSavedPlace(to)) return '';
+  const k = dkey(to), c = store.get('destCount', {}), no = store.get('destNo', []);
+  if ((c[k] || 0) < 3 || no.includes(k)) return '';
+  return `<div class="notice sugg"><p>${L(`你已經查過 ${c[k]} 次去「${esc(labelOf(to))}」，設做常用地點？之後喺「常用」頁一撳就計到。`, `You’ve planned to “${esc(labelOf(to))}” ${c[k]} times — save it? It will be one tap away on Saved.`)}</p>
+    <div>${!places.home ? `<button class="btn-d sm" data-save="home" type="button">${L('設為屋企', 'Home')}</button>` : ''}${!places.work ? `<button class="btn-d sm" data-save="work" type="button">${L('設為學校／公司', 'School / Work')}</button>` : ''}<button class="btn-d sm" data-save="custom" type="button">${L('加做常用地點', 'Add to places')}</button><button class="btn-d sm" data-save="no" type="button">${L('唔使', 'No thanks')}</button></div></div>`;
+}
+
 export function legChips(o){
   if (o.walkOnly) return `<span class="lc walk">${icon.walk}${o.walk0}′</span>`;
-  const parts = [`<span class="lc walk">${icon.walk}${o.walk0}′</span>`];
+  const parts = [`<span class="lc walk" aria-label="${esc(L(`行 ${o.walk0} 分鐘`, `walk ${o.walk0} min`))}">${icon.walk}${o.walk0}′</span>`];
   o.legs.forEach((l, i) => {
     const r = rt(l.key);
     if (i > 0 && l.walk) parts.push(`<span class="lc walk">${icon.walk}${l.walk}′</span>`);
@@ -339,9 +434,10 @@ export function steps(o){
   o.legs.forEach((l, i) => {
     const r = rt(l.key), tm = o.times[i], nStops = l.aseq - l.bseq, ride = Math.round(rideMin(r, l.co, l.bseq, l.aseq));
     const name = routeLabel(r);
+    const plat = tm.plat ? ' · ' + L(`${esc(tm.plat)} 號月台`, `Platform ${esc(tm.plat)}`) : '';
     if (i === 0) out.push(`<li><b>${hhmm(o.leaveT)}</b> ${L(`出門，行 ${o.walk0} 分鐘去 ${esc(stopName(l.board))}`, `Leave, walk ${o.walk0} min to ${esc(stopName(l.board))}`)}</li>`);
     else out.push(`<li><b>${hhmm(o.times[i - 1].alightT)}</b> ${l.walk ? L(`行 ${l.walk} 分鐘去 ${esc(stopName(l.board))} 轉車`, `Walk ${l.walk} min to ${esc(stopName(l.board))}`) : L(`喺 ${esc(stopName(l.board))} 轉車`, `Change at ${esc(stopName(l.board))}`)}</li>`);
-    out.push(`<li class="ride"><b class="${tm.live ? 'live' : ''}">${hhmm(tm.boardT)}</b> ${L(`搭 ${esc(name)} 往 ${esc(nm(r.dest))}`, `Take ${esc(name)} towards ${esc(nm(r.dest))}`)}<small>${coName(l.co)} · ${L(`坐 ${nStops} 個站，約 ${ride} 分鐘`, `${nStops} stops, ~${ride} min`)}${fg.get(i) || ''}${tm.live ? '' : ' · ' + L('時間表／估計班次', 'scheduled / estimated')}${l.alt?.length ? '<br>' + L(`${esc(l.alt.join('、'))} 都得，邊班先到搭邊班`, `${esc(l.alt.join(', '))} also work — take whichever comes first`) : ''}</small></li>`);
+    out.push(`<li class="ride"><b class="${tm.live ? 'live' : ''}">${hhmm(tm.boardT)}</b> ${L(`搭 ${esc(name)} 往 ${destHtml(nm(r.dest))}`, `Take ${esc(name)} towards ${destHtml(nm(r.dest))}`)}<small>${coName(l.co)}${plat} · ${L(`坐 ${nStops} 個站，約 ${ride} 分鐘`, `${nStops} stops, ~${ride} min`)}${fg.get(i) || ''}${tm.live ? '' : ' · <span class="est">' + L('時間表估算，可能有變', 'timetable estimate, may change') + '</span>'}${l.alt?.length ? '<br>' + L(`${esc(l.alt.join('、'))} 都得，邊班先到搭邊班`, `${esc(l.alt.join(', '))} also work — take whichever comes first`) : ''}</small></li>`);
     out.push(`<li><b>${hhmm(tm.alightT)}</b> ${L(`喺 ${esc(stopName(l.alight))} 落車`, `Get off at ${esc(stopName(l.alight))}`)}</li>`);
   });
   out.push(`<li class="end"><b>${hhmm(o.arriveT)}</b> ${o.walkEnd ? L(`行 ${o.walkEnd} 分鐘到目的地`, `Walk ${o.walkEnd} min to destination`) : L('到達', 'Arrive')}</li>`);
@@ -350,25 +446,65 @@ export function steps(o){
 function drawRes(){
   const el = $('pRes');
   if (!results) return;
-  if (!results.length) { el.innerHTML = `<div class="hero"><h1>${L('搵唔到路線', 'No routes found')}</h1><p>${L('起點或者目的地 600 米內冇車站，或者而家冇車行。', 'No stops within 600 m of either end, or nothing is running now.')}</p></div>`; return; }
-  const sl = SORT_UI.find(x => x[0] === sort) || SORT_UI[0];
-  el.innerHTML = `<p class="lbl pad">${L(`${results.length} 個方案 · 按${sl[1]}排`, `${results.length} options · ${sl[2].toLowerCase()} first`)}${at ? ' · ' + L(`${localDT(at).replace('T', ' ')} 出發（按時間表估）`, `leaving ${localDT(at).replace('T', ' ')} (timetable)`) : ' · ' + L('每分鐘自動更新', 'auto-updates every minute')}</p>` + results.map((o, i) => {
-    const tot = Math.max(1, Math.round((o.arriveT - Math.max(at || now(), o.leaveT)) / 60000)), lv = mins(o.leaveT);
-    const xf = Math.max(0, o.legs.length - 1);
-    return `<article class="opt${i === open ? ' open' : ''}" data-i="${i}">
+  let html;
+  if (failed) html = `<div class="hero"><h1>${L('連唔到網絡', 'Can’t connect')}</h1><p>${L('計唔到路線，唔係因為冇車。請檢查網絡再試。', 'Couldn’t plan the trip — this is a connection problem, not a lack of service.')}</p><button class="btn-y" data-retry type="button">${L('再試一次', 'Try again')}</button></div>`;
+  else if (!results.length) html = `<div class="hero"><h1>${L('搵唔到路線', 'No routes found')}</h1><p>${mode === 'arrive' ? L('喺你揀嘅時間之前到唔切，試下揀遲啲嘅到達時間。', 'Nothing gets you there in time — try a later arrival time.') : L('起點或者目的地附近冇車站，或者嗰個時間冇車行。', 'No stops near either end, or nothing runs at that time.')}</p></div>`;
+  else {
+    const sl = SORT_UI.find(x => x[0] === sort) || SORT_UI[0];
+    const head = mode === 'arrive' ? L(`${results.length} 個方案 · ${localDT(at).replace('T', ' ')} 前到 · 出門最遲排先（按時間表估）`, `${results.length} options · arrive by ${localDT(at).replace('T', ' ')} · latest departure first (timetable)`)
+      : `${L(`${results.length} 個方案 · 按${sl[1]}排`, `${results.length} options · ${sl[2].toLowerCase()} first`)}${mode === 'later' ? ' · ' + L(`${localDT(at).replace('T', ' ')} 出發（按時間表估）`, `leaving ${localDT(at).replace('T', ' ')} (timetable)`) : ' · ' + L('每分鐘自動更新', 'auto-updates every minute')}`;
+    html = suggestHtml() + `<p class="lbl pad">${head}</p>` + results.map((o, i) => {
+      const tot = Math.max(1, Math.round((o.arriveT - o.leaveT) / 60000)), lv = mins(o.leaveT);
+      const xf = Math.max(0, o.legs.length - 1);
+      const sched = mode !== 'now';
+      return `<article class="opt${i === open ? ' open' : ''}" data-i="${i}">
       <button class="opt-h" type="button" aria-expanded="${i === open}">
         <span class="opt-arr"><small>${L('約', 'Arrive')}</small>${hhmm(o.arriveT)}<small>${L('到', '')}</small></span>
         <span class="opt-m"><span class="legs">${legChips(o)}</span>
-        <small>${at ? `<b class="go">${L(`${hhmm(o.leaveT)} 出門`, `Leave ${hhmm(o.leaveT)}`)}</b>` : lv < -1 ? `<b class="late">${L('已過出門時間', 'Leave time passed')}</b>` : lv <= 0 ? `<b class="go">${L('而家出門', 'Leave now')}</b>` : `<b class="go">${L(`${hhmm(o.leaveT)} 出門`, `Leave ${hhmm(o.leaveT)}`)}</b> · ${L(`${lv} 分鐘後`, `in ${lv} min`)}`} · ${L(`全程 ${tot} 分鐘`, `${tot} min`)}${o.legs.length ? ' · ' + (xf ? L(`轉 ${xf} 次車`, `${xf} change${xf > 1 ? 's' : ''}`) : L('直達', 'direct')) : ''}${o.legs.length ? ' · ' + (o.fareUnknown ? (o.fare ? money(o.fare) + L(' + 部分車費未知', ' + some fares unknown') : L('車費未知', 'fare unknown')) : money(o.fare)) : ''}${o.walkSum ? ' · ' + L(`行 ${o.walkSum} 分鐘`, `${o.walkSum} min walk`) : ''}${o.unsure && !at ? ' · ' + L('部分估計', 'partly estimated') : ''}</small></span></button>
-      ${i === open ? `<div class="opt-x"><ol class="steps">${steps(o)}</ol>${o.legs.length ? `<button class="btn-y big" data-go type="button">${icon.door}<span>${L('開始出門倒數', 'Start leave countdown')}</span></button>` : ''}</div>` : ''}
+        <small>${sched ? `<b class="go">${L(`${hhmm(o.leaveT)} 出門`, `Leave ${hhmm(o.leaveT)}`)}</b>` : lv < -1 ? `<b class="late">${L('已過出門時間', 'Leave time passed')}</b>` : lv <= 0 ? `<b class="go">${L('而家出門', 'Leave now')}</b>` : `<b class="go">${L(`${hhmm(o.leaveT)} 出門`, `Leave ${hhmm(o.leaveT)}`)}</b> · ${L(`${lv} 分鐘後`, `in ${lv} min`)}`} · ${L(`車程 ${tot} 分鐘`, `${tot} min trip`)}${o.legs.length ? ' · ' + (xf ? L(`轉 ${xf} 次車`, `${xf} change${xf > 1 ? 's' : ''}`) : L('直達', 'direct')) : ''}${o.legs.length ? ' · ' + (o.fareUnknown ? (o.fare ? money(o.fare) + L(' + 部分車費未知', ' + some fares unknown') : L('車費未知', 'fare unknown')) : money(o.fare)) : ''}${o.walkSum ? ' · ' + L(`行 ${o.walkSum} 分鐘`, `${o.walkSum} min walk`) : ''}${o.unsure && !sched ? ' · <span class="est">' + L('部分時間表估算', 'partly estimated') + '</span>' : ''}</small></span></button>
+      ${i === open ? `<div class="opt-x"><ol class="steps">${steps(o)}</ol>${o.legs.length ? `<div class="sh-btns"><button class="btn-y big" data-go type="button">${icon.door}<span>${L('開始出門倒數', 'Start leave countdown')}</span></button><button class="btn-d big" data-map type="button">${icon.pin}<span>${L('睇地圖', 'Map')}</span></button></div>` : ''}</div>` : ''}
     </article>`;
-  }).join('');
+    }).join('');
+  }
+  // 內容冇變就唔重畫（每 20 秒檢查一次），免得閃、免得跳位
+  if (el._html === html) return;
+  setRes(html);
+}
+// 方案地圖：每程車一種顏色，畫出上落車站同轉車位
+function planMap(o){
+  openSheet(`<div class="sh-head"><div><b>${L('行程地圖', 'Trip map')}</b><small>${esc(labelOf(from))} → ${esc(labelOf(to))}</small></div></div><div class="pmap" id="pmap"></div>`, async card => {
+    try {
+      const el = card.querySelector('#pmap');
+      const m = await makeMap(el, from, 14), Lf = window.L, all = [[from.lat, from.lng]];
+      o.legs.forEach((l, i) => {
+        const r = rt(l.key), st = r.stops[l.co].slice(l.bseq, l.aseq + 1).map(stopLoc).filter(Boolean).map(p => [p.lat, p.lng]);
+        const c = l.co === 'mtr' ? lineColor(r.route) : l.co === 'lightRail' ? lrtColor(r.route) : FERRY.has(l.co) ? '#4aa3df' : coColor(l.co);
+        if (st.length) { Lf.polyline(st, {color: c, weight: 6, opacity: .95}).addTo(m); all.push(...st);
+          Lf.marker(st[0], {icon: pin(String(i + 1), 'board', 26)}).bindTooltip(stopName(l.board)).addTo(m);
+          Lf.marker(st[st.length - 1], {icon: pin('', 'alight', 16)}).bindTooltip(stopName(l.alight)).addTo(m); }
+      });
+      all.push([to.lat, to.lng]);
+      Lf.marker([from.lat, from.lng], {icon: pin(L('起', 'A'), 'sel', 26)}).addTo(m);
+      Lf.marker([to.lat, to.lng], {icon: pin(L('到', 'B'), 'sel', 26)}).addTo(m);
+      m.fitBounds(Lf.latLngBounds(all), {padding: [24, 24]});
+    } catch { card.querySelector('#pmap').innerHTML = `<p class="loading">${L('地圖載入唔到', 'Map unavailable')}</p>`; }
+  });
 }
 function onRes(e){
+  if (e.target.closest('[data-retry]')) { run(); return; }
+  const sv = e.target.closest('[data-save]');
+  if (sv) {
+    const k = sv.dataset.save, v = {lat: to.lat, lng: to.lng, label: labelOf(to)};
+    if (k === 'no') { store.set('destNo', [...store.get('destNo', []), dkey(to)]); }
+    else { if (k === 'home') places.home = v; else if (k === 'work') places.work = v; else places.custom = [...(places.custom || []), v]; savePlaces(); toast(L('已儲存', 'Saved')); }
+    $('pRes')._html = ''; drawRes(); return;
+  }
   const art = e.target.closest('.opt'); if (!art) return;
   const i = +art.dataset.i;
+  if (e.target.closest('[data-map]')) { planMap(results[i]); return; }
   if (e.target.closest('[data-go]')) {
-    if (at && at - now() > 45 * 60000) { toast(L('出門倒數只可以用喺而家出發，請揀「而家出發」', 'Countdown works for trips leaving now — switch to Leave now')); return; }
+    const t = mode === 'arrive' || mode === 'later' ? results[i].leaveT : now();
+    if (t - now() > 45 * 60000) { toast(L('出門倒數只可以用喺 45 分鐘內出發嘅行程', 'Countdown works for trips leaving within 45 minutes')); return; }
     startTrip({...toTrip(results[i], from, to), alts: {from, to}}); return;
   }
   if (e.target.closest('.opt-h')) { open = open === i ? -1 : i; drawRes(); }
