@@ -195,7 +195,12 @@ export function searchStops(q, limit = 8){
 }
 /* ---------- 地點搜尋：政府地址（大廈、屋苑、門牌）+ OpenStreetMap（商店、餐廳、廟宇、醫院、地標） ---------- */
 // 兩個來源一齊搵，再按「名同你打嘅字有幾吻合」排次序；唔吻合嘅（例如打「麥當勞 旺角」出咗「豪華閣」）排到最後或者唔要
-const norm = s => String(s || '').toLowerCase().replace(/[\s·・,，.。()（）\-–—'’"]/g, '');
+const CN = {零: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9};
+const cnNum = t => { if (t === '十') return 10; const m = /^([一二兩三四五六七八九])?十([一二三四五六七八九])?$/.exec(t); if (m) return (m[1] ? CN[m[1]] : 1) * 10 + (m[2] ? CN[m[2]] : 0); return t.length === 1 && t in CN ? CN[t] : null; };
+// 正規化：全形轉半形（Ｆ座 = F座）、「第五期」=「第5期」=「5期」、去走空格標點
+const norm = s => String(s || '').normalize('NFKC').toLowerCase()
+  .replace(/[零一二兩三四五六七八九十]+(?=[期座樓區街號])/g, t => { const n = cnNum(t); return n == null ? t : String(n); })
+  .replace(/第(?=\d)/g, '').replace(/[\s·・,，.。()（）\-–—'’"]/g, '');
 const zhPart = s => { const m = /^([^A-Za-z]*[^\x00-\x7f][^A-Za-z]*?)\s+([A-Za-z0-9].*)$/.exec(String(s || '').trim()); return m ? [m[1].trim(), m[2].trim()] : [String(s || '').trim(), String(s || '').trim()]; };
 // OpenStreetMap 類別 → 中文（顯示喺地點名下面，一眼分到係餐廳定醫院）
 const CAT = {restaurant: ['餐廳', 'Restaurant'], fast_food: ['快餐店', 'Fast food'], cafe: ['咖啡店', 'Café'], hospital: ['醫院', 'Hospital'], clinic: ['診所', 'Clinic'],
@@ -216,12 +221,23 @@ async function alsSearch(q){
   const j = await r.json(), out = [];
   for (const s of j.SuggestedAddress || []) {
     const p = s.Address?.PremisesAddress || {}, c = p.ChiPremisesAddress || {}, e = p.EngPremisesAddress || {}, g = p.GeospatialInformation || {};
-    const zh = c.BuildingName || c.ChiEstate?.EstateName || [c.ChiStreet?.StreetName, c.ChiStreet?.BuildingNoFrom && c.ChiStreet.BuildingNoFrom + '號'].filter(Boolean).join('');
-    const en = e.BuildingName || e.EngEstate?.EstateName || [e.EngStreet?.BuildingNoFrom, e.EngStreet?.StreetName].filter(Boolean).join(' ');
-    const sub = [c.ChiStreet?.StreetName && (c.ChiStreet.StreetName + (c.ChiStreet.BuildingNoFrom ? c.ChiStreet.BuildingNoFrom + '號' : '')), c.ChiDistrict?.DcDistrict].filter(Boolean).join(' · ');
-    const subEn = [e.EngStreet?.BuildingNoFrom, e.EngStreet?.StreetName, e.EngDistrict?.DcDistrict].filter(Boolean).join(' ');
+    const st = c.ChiStreet || {}, se = e.EngStreet || {};
+    const no = st.BuildingNoFrom ? st.BuildingNoFrom + (st.BuildingNoTo ? '-' + st.BuildingNoTo : '') : '';
+    const noEn = se.BuildingNoFrom ? se.BuildingNoFrom + (se.BuildingNoTo ? '-' + se.BuildingNoTo : '') : '';
+    // 中文：屋苑 + 期數 + 座數／大廈名（例如「沙田第一城 33座」「美孚新邨第五期」「創紀之城 渣打中心」）
+    const blk = c.ChiBlock?.BlockNo ? c.ChiBlock.BlockNo + (c.ChiBlock.BlockDescriptor || '座') : '';
+    const est = (c.ChiEstate?.EstateName || '') + (c.ChiEstate?.ChiPhase?.PhaseName || '');
+    const bld = c.BuildingName || blk;
+    // 大廈名本身已經包含屋苑名（例如「康怡花園Ｆ座」）就唔好重複
+    const zh = est && bld ? (norm(bld).includes(norm(c.ChiEstate?.EstateName)) ? bld : `${est} ${bld}`) : est || bld || [st.StreetName, no && no + '號'].filter(Boolean).join('');
+    const blkEn = e.EngBlock?.BlockNo ? (e.EngBlock.BlockDescriptorPrecedenceIndicator === 'Y' ? `${e.EngBlock.BlockDescriptor || 'Block'} ${e.EngBlock.BlockNo}` : `${e.EngBlock.BlockNo} ${e.EngBlock.BlockDescriptor || ''}`) : '';
+    const estEn = [e.EngEstate?.EstateName, e.EngEstate?.EngPhase?.PhaseName].filter(Boolean).join(' ');
+    const bldEn = e.BuildingName || blkEn;
+    const en = estEn && bldEn ? `${bldEn}, ${estEn}` : estEn || bldEn || [noEn, se.StreetName].filter(Boolean).join(' ');
+    const sub = [st.StreetName && st.StreetName + (no ? no + '號' : ''), c.ChiDistrict?.DcDistrict].filter(Boolean).join(' · ');
+    const subEn = [[noEn, se.StreetName].filter(Boolean).join(' '), e.EngDistrict?.DcDistrict].filter(Boolean).join(', ');
     if (!g.Latitude || !zh) continue;
-    out.push({kind: 'place', src: 'als', name: {zh, en: en || zh}, sub: {zh: sub, en: subEn}, lat: +g.Latitude, lng: +g.Longitude});
+    out.push({kind: 'place', src: 'als', name: {zh, en: en || zh}, sub: {zh: sub, en: subEn}, lat: +g.Latitude, lng: +g.Longitude, no: st.BuildingNoFrom, noTo: st.BuildingNoTo});
   }
   return out;
 }
@@ -242,7 +258,14 @@ async function osmSearch(q){
   return out;
 }
 // 吻合程度：0 完全一樣、1 開頭一樣、2 包含成句、3 每個字詞都喺名或者地址度、4 部分吻合、9 唔吻合
+// 名同地址都比較：打街道門牌（例如「觀塘道388號」）時，地址完全吻合嘅大廈（渣打中心）要排先
 function matchScore(x, q){
+  const byName = nameScore(x, q);
+  const a = norm(x.sub?.zh) + '|' + norm(x.sub?.en), nq = norm(q);
+  const bySub = a && nq.length >= 3 && (a.startsWith(nq) || a.includes(nq)) ? 1 : 9;
+  return Math.min(byName, bySub);
+}
+function nameScore(x, q){
   const nq = norm(q), name = norm(x.name.zh) + '|' + norm(x.name.en), all = name + '|' + norm(x.sub?.zh) + '|' + norm(x.sub?.en);
   const toks = q.trim().toLowerCase().split(/\s+/).map(norm).filter(Boolean);
   if (norm(x.name.zh) === nq || norm(x.name.en) === nq) return 0;
@@ -261,8 +284,16 @@ function rankPlaces(q, osm, als){
   const addrLike = /\d|號|街|道|路|里|徑/.test(q);
   const raw = [...osm, ...als].map(x => ({...x, ms: matchScore(x, q) + (x.road ? 1.5 : 0) + (x.src === (addrLike ? 'osm' : 'als') ? 0.3 : 0)}));
   // 有門牌號碼：號碼完全一樣排先，號碼唔同嘅標明「最接近」
-  const num = (/(\d+[A-Za-z]?)\s*號?\s*$/.exec(q) || [])[1];
-  if (num) for (const x of raw) { const hit = new RegExp(`(^|\\D)${num}號`).test(x.name.zh) || new RegExp(`(^|\\D)${num}(\\D|$)`).test(x.name.en || ''); if (hit) x.ms -= 2; else if (x.whole) x.ms += 1; else if (x.src === 'als') x.near = true; }
+  const nq = norm(q), m = /(\d+[a-z]?|[a-z])(號|座|期|樓)?$/.exec(nq);
+  if (m && /\d|座|期|樓/.test(m[0])) {
+    const num = m[1], unit = m[2] || (/\d/.test(num) ? '號' : '座');
+    const inRange = x => unit === '號' && x.no && x.noTo && +num >= +x.no && +num <= +x.noTo;
+    for (const x of raw) {
+      const txt = norm(x.name.zh) + '|' + norm(x.sub?.zh) + '|' + norm(x.name.en);
+      const hit = new RegExp(`(^|[^0-9a-z])${num}${unit}`).test(txt) || inRange(x) || (unit === '號' && x.no === num);
+      if (hit) x.ms -= 2; else if (x.whole) x.ms += 1; else if (x.src === 'als') x.near = true;
+    }
+  }
   const ranked = raw.filter(x => x.ms < 9).sort((x, y) => x.ms - y.ms || (S.here ? dist(S.here, x) - dist(S.here, y) : 0));
   const out = [];
   for (const x of ranked) if (!out.some(y => norm(y.name.zh) === norm(x.name.zh) && dist(x, y) < 400)) out.push(x);   // 醫院、體育園呢類大地方，兩個來源嘅點可以相距幾百米
