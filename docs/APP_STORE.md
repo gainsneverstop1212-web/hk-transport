@@ -36,7 +36,7 @@ npm run ios
 
 ## 提交前清單
 
-- App icon：1024×1024 PNG，冇透明背景
+- App icon：1024×1024 PNG，冇透明背景（已經準備好：`resources/icon-1024.png`，方角、冇圓角，系統會自己切圓角）
 - 私隱政策網址（可以放喺 GitHub Pages）：講明定位只喺手機用、唔會上傳
 - App Privacy 標籤：位置（只作 app 功能、唔連結身份）
 - 截圖：iPhone 6.9 吋

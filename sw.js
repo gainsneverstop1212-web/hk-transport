@@ -1,8 +1,8 @@
 // 港住走 service worker：快取 app 外殼（網絡優先），實時到站一律唔快取
-const SHELL = 'hkgo-shell-v15';
+const SHELL = 'hkgo-shell-v16';
 const FILES = ['./', './index.html', './css/app.css', './js/app.js', './js/core.js', './js/eta.js', './js/ui.js', './js/map.js',
   './js/nearby.js', './js/route.js', './js/plan.js', './js/trip.js', './js/saved.js', './js/news.js', './js/fares.js', './js/wx.js', './js/habit.js', './js/alerts.js', './js/share.js', './share.html',
-  './manifest.json', './icon-192.png', './icon-512.png'];
+  './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
 });

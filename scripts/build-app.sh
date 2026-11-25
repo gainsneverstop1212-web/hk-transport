@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=www
 rm -rf "$OUT" && mkdir -p "$OUT/vendor/leaflet/images" "$OUT/vendor/fonts" "$OUT/data"
-cp -R index.html manifest.json sw.js icon-192.png icon-512.png css js "$OUT/"
+cp -R index.html manifest.json sw.js icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png favicon-32.png css js "$OUT/"
 
 echo "· 下載 Leaflet 1.9.4"
 LF=https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4
