@@ -142,7 +142,7 @@ export function accountHtml(){
     <div class="acct-t"><b>${L('登入帳戶', 'Sign in')}</b><small>${L('換手機、用平板都記住你嘅常用地點、樓層、常用路線同設定。唔登入都照用得。', 'Keep your places, floors, pinned routes and settings across devices. Optional.')}</small></div>
     ${PROVIDERS?.apple !== false ? `<button class="acct-b apple" type="button" data-acct="apple">${APPLE}<span>${L('用 Apple 登入', 'Sign in with Apple')}</span></button>` : ''}
     ${PROVIDERS?.google !== false ? `<button class="acct-b google" type="button" data-acct="google">${GOOGLE}<span>${L('用 Google 登入', 'Sign in with Google')}</span></button>` : ''}
-    <small class="acct-p">${L('只會儲存你喺 app 入面嘅設定；只有你登入先睇到，隨時可以刪除。', 'Only your in-app settings are stored, visible only to you, deletable any time.')}</small></div>`;
+    <small class="acct-p">${L('只會儲存你喺 app 入面嘅設定；只有你登入先睇到，隨時可以刪除。', 'Only your in-app settings are stored, visible only to you, deletable any time.')} <a href="privacy.html${S.set.lang === 'en' ? '#en' : ''}">${L('私隱政策', 'Privacy policy')}</a></small></div>`;
   const name = user.displayName || user.email || L('已登入', 'Signed in');
   return `<div class="acct in">
     <span class="acct-av" aria-hidden="true">${esc((name || '?').trim()[0].toUpperCase())}</span>

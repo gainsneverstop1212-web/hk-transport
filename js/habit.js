@@ -2,7 +2,7 @@
 // 每次用出門倒數撳「出咗門」就記低：幾點、由邊度去邊度、搭咩車。
 // 同一個起點去同一個目的地、平日（或週末）大約同一個鐘數出現 3 日或以上，就當係你嘅通勤習慣。
 // 之後喺嗰個鐘數前後，常用頁頂會自動出「X 分鐘後出門」，App 版仲會每日預約系統通知。
-// 全部紀錄只存喺呢部機（localStorage），唔會上傳。
+// 紀錄存喺呢部機（localStorage）；登入咗帳戶就會同步到雲端（見 account.js SYNC_KEYS）。
 import {S, store, L, now, dist, dayIdx, lineName} from './core.js';
 
 const KEY = 'habitLog', MAX = 80, NEAR = 350, MIN_DAYS = 3, SPREAD = 40;
