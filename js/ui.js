@@ -48,9 +48,12 @@ export const savePlaces = () => { store.set('places', places); emit('places'); }
 /* ---------- 返回鍵堆疊（Android 返回鍵 / 瀏覽器返回都會關閉最上層） ---------- */
 const stack = [];
 function pushLayer(close){ stack.push(close); history.pushState({hkgo: stack.length}, ''); }
+let afterPop = [];
 window.addEventListener('popstate', () => {
   const depth = history.state?.hkgo || 0;
   while (stack.length > depth) stack.pop()();
+  const fns = afterPop; afterPop = [];
+  fns.forEach(f => f());
 });
 export const back = () => { if (stack.length) history.back(); };
 export const addLayer = close => pushLayer(close);
@@ -66,7 +69,13 @@ export function openSheet(html, mount){
   if (!wasOpen) pushLayer(hideSheet);
   mount?.(sh.querySelector('.sheet-card'));
 }
-export function closeSheet(){ if (!$('sheet').hidden) back(); }
+// then：等面板真係關咗（返回鍵記錄退完）先做，例如開出門倒數；
+// 唔等嘅話新加嘅倒數層會俾遲嚟嘅「返回」即刻收細
+export function closeSheet(then){
+  if ($('sheet').hidden || !stack.length) { then?.(); return; }
+  if (then) afterPop.push(then);
+  back();
+}
 
 /* ---------- 全頁（路線詳情等） ---------- */
 export function openPage(cls = ''){

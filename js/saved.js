@@ -75,6 +75,18 @@ function drawSettings(){
     <div class="set-r"><span>${L('路線資料', 'Route data')}</span><div class="sh-inline"><button class="btn-d sm" data-a="upd" type="button">${L('而家更新', 'Update now')}</button><button class="btn-d sm" data-a="clear" type="button">${L('清除重下載', 'Reset')}</button></div></div>
     <p class="hint">${L('裝喺主畫面用效果最好：iPhone 用 Safari 撳「分享」→「加至主畫面」。通知、落車提示同螢幕常亮，只喺 app 開住嗰陣有效。', 'Best installed: in Safari tap Share → Add to Home Screen. Alerts and keep-awake work while the app is open.')} ${L('iPhone 鎖咗機唔會響提示，可以喺倒數畫面撳「加入行事曆提醒」。', 'iPhone won’t alert while locked — use “Add calendar alarms” on the countdown.')}</p>`;
 }
+// 一鍵回程：同一條路線、相反方向，喺同一個地方附近嘅車站（例如返工搭 1A 去尖沙咀，回程就係 1A 返嚟嗰邊）
+function reverseOf(d){
+  const r = S.DB.routeList[d.key], here = S.DB.stopList[d.stop]?.location;
+  if (!r || !here) return null;
+  let best = null;
+  for (const [k, x] of Object.entries(S.DB.routeList)) {
+    if (k === d.key || x.route !== r.route || !x.stops[d.co] || nm(x.dest) === nm(r.dest)) continue;
+    if (x.orig?.zh !== r.dest?.zh && x.dest?.zh !== r.orig?.zh) continue;
+    for (const id of x.stops[d.co]) { const p = S.DB.stopList[id]?.location; if (!p) continue; const m = dist(p, here); if (m < 400 && (!best || m < best.m)) best = {key: k, stop: id, m}; }
+  }
+  return best;
+}
 async function drawFavs(){
   const el = $('favl');
   if (!favs.size) { el.innerHTML = `<p class="hint">${L('喺「附近」或者路線頁撳 ☆，常用路線就會喺度出現，唔使喺附近都睇到到站時間。', 'Tap ☆ on Nearby or a route page to pin it here.')}</p>`; return; }
@@ -95,7 +107,8 @@ async function drawFavs(){
     const title = d.kind === 'mtr' ? L('往 ', 'To ') + stopName(d.dest) : L('往 ', 'To ') + nm(d.kind === 'lrt' ? d.dest : r?.dest);
     const sub = d.kind === 'mtr' ? lineName(d.line) + ' · ' + stopName(d.sta) : stopName(d.kind === 'lrt' ? d.stop : d.stop);
     const l = (favEta.get(id) || []).filter(e => mins(e.t) >= 0);
-    return `<div class="row fav-row" data-fid="${esc(id)}" role="button" tabindex="0">${tiles}<div class="dst"><b>${esc(title)}</b><small>${esc(sub)}</small></div>
+    const rev = d.kind === 'bus' && reverseOf(d) ? `<button class="rev" type="button" data-a="rev" data-fid="${esc(id)}" aria-label="${L('睇回程', 'Return trip')}">⇄ ${L('回程', 'Return')}</button>` : '';
+    return `<div class="row fav-row" data-fid="${esc(id)}" role="button" tabindex="0">${tiles}<div class="dst"><b>${esc(title)}</b><small>${esc(sub)}</small>${rev}</div>
       <div class="eta">${l.length ? `<div class="big${l[0].sched ? ' sched' : ''}">${flaps(mins(l[0].t) <= 0 ? L('即將', 'Now') : mins(l[0].t) >= 60 ? hhmm(l[0].t) : String(mins(l[0].t)).padStart(2, '0'), 'fv' + id)}${mins(l[0].t) > 0 && mins(l[0].t) < 60 ? `<span class="u">${L('分', 'min')}</span>` : ''}</div>${l[1] ? `<small>${L('之後 ', 'then ')}${mins(l[1].t) >= 60 ? hhmm(l[1].t) : mins(l[1].t) + L(' 分', ' min')}</small>` : ''}` : `<span class="none">${L('暫無班次', 'No service')}</span>`}</div>
       <button class="star" type="button" data-unfav="${esc(id)}" aria-pressed="true" aria-label="${L('取消常用', 'Unpin')}">${icon.star(true)}</button></div>`;
   }).join('');
@@ -111,6 +124,7 @@ function pickPlace(title, done){
 function onClick(e){
   const b = e.target.closest('[data-a],[data-unfav],[data-fid]'); if (!b) return;
   if (b.dataset.unfav) { e.stopPropagation(); toggleFav(b.dataset.unfav); return; }
+  if (b.dataset.a === 'rev') { e.stopPropagation(); const d = favs.get(b.dataset.fid), x = d && reverseOf(d); if (x) openRoute(x.key, x.stop); else toast(L('搵唔到回程方向', 'No return direction found')); return; }
   if (b.dataset.fid && !b.dataset.a) { const d = favs.get(b.dataset.fid); if (d?.kind === 'bus') openRoute(d.key, d.stop); return; }
   const a = b.dataset.a, k = b.dataset.k;
   const get = k => k === 'home' ? places.home : k === 'work' ? places.work : places.custom[+k.slice(1)];

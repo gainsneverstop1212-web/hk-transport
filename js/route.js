@@ -185,7 +185,7 @@ export function stationSheet(id, co){
         <span class="sr-t"><b>${L('往', 'To')} ${esc(dest || '')}</b><small>${row.plat ? L(`${esc(row.plat)} 號月台`, `Platform ${esc(row.plat)}`) : esc(row.note || '')}</small></span>
         <span class="sr-e">${l.length ? l.slice(0, 3).map((e, k) => `<b class="${k ? 'n' : ''}">${mins(e.t) <= 0 ? L('即將', 'now') : mins(e.t)}</b>`).join('') + `<small>${L('分鐘', 'min')}</small>` : `<span class="none">${esc(row.note || (row.err ? L('暫時攞唔到', 'Unavailable') : L('暫無班次', 'No trains')))}</span>`}</span></button>`;
     }).join('') || `<p class="hint">${L('暫無資料', 'No data')}</p>`;
-    box.onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; const k = railKeyFor(id, co, rows[+b.dataset.i]); if (!k) { toast(L('搵唔到呢個方向嘅路線', 'Direction not found')); return; } closeSheet(); setTimeout(() => openRoute(k, id), 40); };
+    box.onclick = e => { const b = e.target.closest('[data-i]'); if (!b) return; const k = railKeyFor(id, co, rows[+b.dataset.i]); if (!k) { toast(L('搵唔到呢個方向嘅路線', 'Direction not found')); return; } closeSheet(() => openRoute(k, id)); };
   });
 }
 

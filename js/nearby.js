@@ -333,13 +333,12 @@ function rowSheet(g, key, s, cos, list, note){
     <label class="fld"><span>${L('喺邊個站落車？（可以唔揀）', 'Get off at (optional)')}</span><select id="alight"><option value="">${L('未決定', 'Not sure yet')}</option>${opts}</select></label>
     <div class="sh-btns"><button class="btn-y big" id="goTrip" type="button">${icon.door}<span>${L('出門倒數', 'Leave countdown')}</span></button>
     <button class="btn-d big" id="seeRoute" type="button">${icon.bus}<span>${L('睇成條路線', 'Whole route')}</span></button></div>`, card => {
-    card.querySelector('#seeRoute').onclick = () => { closeSheet(); setTimeout(() => openRoute(key, s.stop), 30); };
+    card.querySelector('#seeRoute').onclick = () => closeSheet(() => openRoute(key, s.stop));
     card.querySelector('#goTrip').onclick = () => {
       const a = card.querySelector('#alight').value;
-      closeSheet();
-      startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: g.walk,
+      closeSheet(() => startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: g.walk,
         legs: [{key, co: s.co, board: s.stop, bseq: s.seq, alight: a ? st[+a] : null, aseq: a ? +a : null}], walkEnd: 0,
-        to: a ? {label: stopName(st[+a]), ...stopLoc(st[+a])} : null});
+        to: a ? {label: stopName(st[+a]), ...stopLoc(st[+a])} : null}));
     };
   });
 }

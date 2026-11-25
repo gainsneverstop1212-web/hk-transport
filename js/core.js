@@ -97,7 +97,7 @@ export const routeLabel = r => !r ? '' : r.co[0] === 'mtr' ? lineName(r.route) :
 export const lineTiles = c => `<div class="rt ln${darkText(c) ? ' dark' : ''}" style="--c:${lineColor(c)}" role="img" aria-label="${esc(lineName(c))}">${[...lineShort(c)].slice(0, 3).map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`;
 
 /* ---------- 數據載入 ---------- */
-async function download(cache, onProgress){
+async function download(cache, onProgress, parse = true){
   const res = await fetch(DATA_URL, {cache: 'no-store'});
   const meta = {lm: res.headers.get('last-modified'), len: res.headers.get('content-length')};
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -107,7 +107,9 @@ async function download(cache, onProgress){
     for (;;) { const {done, value} = await reader.read(); if (done) break; chunks.push(value); got += value.length; onProgress?.(got); }
     text = await new Blob(chunks).text();
   } else text = await res.text();
-  const j = JSON.parse(text);
+  // 背景更新唔使即刻解析成個 8 MB JSON（舊手機會卡一卡）：只做基本檢查就存入快取，下次開 app 先用
+  const j = parse ? JSON.parse(text) : null;
+  if (!parse && !(text.length > 1e6 && text.trimStart()[0] === '{' && text.trimEnd().endsWith('}'))) throw new Error('bad data');
   if (cache) { try { await cache.put(DATA_URL, new Response(text, {headers: {'Content-Type': 'application/json'}})); store.set('dbTime', Date.now()); store.set('dbMeta', meta); } catch {} }
   return j;
 }
@@ -125,7 +127,7 @@ export async function refreshDb(force){
     const h = await fetch(DATA_URL, {method: 'HEAD', cache: 'no-store'}), m = store.get('dbMeta', null);
     if (m && m.lm && h.headers.get('last-modified') === m.lm) { store.set('dbTime', Date.now()); return 'same'; }
   } catch {}
-  await download(cache);
+  await download(cache, null, false);
   return 'new';
 }
 export async function loadDb(onProgress){

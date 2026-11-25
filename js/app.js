@@ -22,11 +22,11 @@ function shell(){
   document.title = L('港途 · 香港交通到站', 'HK GO · Hong Kong transit');
   $('brandName').textContent = L('港途', 'HK GO');
   $('brandSub').textContent = L('香港交通到站', 'HK transit');
-  $('foot').innerHTML = L('到站時間來自運輸署 DATA.GOV.HK 及各營辦商開放數據，只供參考。路線整合：<a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>；地圖及地址：地政總署、政府地址查詢服務。電車同紅色小巴暫時冇開放實時數據。',
-    'Arrival times from the Transport Department (DATA.GOV.HK) and operators’ open data, for reference only. Route data: <a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">hkbus/hk-bus-crawling</a>; maps and addresses: Lands Department and the Address Lookup Service. Trams and red minibuses have no open real-time data.');
+  $('foot').innerHTML = L('到站時間來自運輸署 DATA.GOV.HK 及各營辦商開放數據，只供參考。路線整合：<a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">HK Bus Crawling@2021</a>；地圖及地址：地政總署、政府地址查詢服務。電車同紅色小巴暫時冇開放實時數據。',
+    'Arrival times from the Transport Department (DATA.GOV.HK) and operators’ open data, for reference only. Route data: <a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">HK Bus Crawling@2021</a>; maps and addresses: Lands Department and the Address Lookup Service. Trams and red minibuses have no open real-time data.');
   $('tabs').setAttribute('aria-label', L('主選單', 'Main menu'));
   $('trip').setAttribute('aria-label', L('出門倒數', 'Leave countdown'));
-  if ($('bootH')) { $('bootH').textContent = L('正在準備全港路線資料', 'Preparing Hong Kong route data'); $('loadTxt').textContent = L('第一次開要下載約 8 MB，之後每日自動更新一次。', 'First launch downloads about 8 MB; it refreshes once a day.'); }
+  if ($('bootH')) { $('bootH').textContent = L('正在準備全港路線資料', 'Preparing Hong Kong route data'); $('loadTxt').textContent = L('第一次開要下載約 8 MB；之後即開，路線資料會喺背景每日更新。', 'First launch downloads about 8 MB; after that it opens instantly and refreshes in the background daily.'); }
   $('langBtn').textContent = S.set.lang === 'en' ? '中' : 'EN';
   $('langBtn').setAttribute('aria-label', L('Switch to English', '轉做中文'));
   $('tabs').innerHTML = TABS.map(([k, zh, en, svg]) => `<button type="button" data-tab="${k}"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${svg}</svg><span>${L(zh, en)}</span></button>`).join('');
@@ -45,12 +45,16 @@ async function boot(){
   shell(); tick(); setInterval(tick, 1000);
   syncClockNow().then(tick);
   const ld = $('loadTxt');
+  // 第一次開喺弱網（月台、𨋢大堂）：20 秒後講清楚發生咩事，俾用家揀繼續等定重試
+  const slow = setTimeout(() => { const b = $('boot'); if (!b) return; const p = document.createElement('p'); p.className = 'hint'; p.innerHTML = `${L('網絡好慢，第一次要下載全港路線資料（之後唔使）。可以繼續等，或者轉用 Wi-Fi 再試。', 'Slow connection — the first launch downloads all route data (only once). Keep waiting or try again on Wi-Fi.')} <button class="btn-d sm" type="button" onclick="location.reload()">${L('重試', 'Retry')}</button>`; b.querySelector('.hero, div')?.appendChild(p) || b.appendChild(p); }, 20000);
   try {
     S.DB = await loadDb(n => { ld.textContent = L(`下載緊路線資料… ${(n / 1048576).toFixed(1)} MB`, `Downloading route data… ${(n / 1048576).toFixed(1)} MB`); });
   } catch (e) {
+    clearTimeout(slow);
     $('boot').innerHTML = `<div class="hero"><h1>${L('載入唔到路線資料', 'Could not load route data')}</h1><p>${L('請檢查網絡再重新整理。', 'Check your connection and reload.')} (${esc(e.message)})</p></div>`;
     return;
   }
+  clearTimeout(slow);
   ld.textContent = L('整理緊車站…', 'Indexing stops…');
   await new Promise(r => setTimeout(r, 20));
   buildIndex();
