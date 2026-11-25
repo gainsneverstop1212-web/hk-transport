@@ -1,5 +1,5 @@
 // 港住走 · 常用：智能主頁、常用地點、收藏路線、設定
-import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast, applyTextSize} from './core.js';
+import {S, $, esc, store, L, nm, liftTime, isLiftPeak, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast, applyTextSize} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPicker} from './ui.js';
 import {planTrip, toTrip, legChips, planTo} from './plan.js';
@@ -16,6 +16,13 @@ export function initSaved(){
     <h2 class="sec">${L('常用路線', 'Pinned routes')}</h2><div id="favl"></div>
     <h2 class="sec">${L('設定', 'Settings')}</h2><div id="setl" class="setl"></div></div>`;
   $('v-saved').addEventListener('click', onClick);
+  // 樓層：打完先儲（唔會一路打一路重畫令輸入框失焦）
+  $('v-saved').addEventListener('change', e => {
+    const k = e.target.dataset?.floor; if (!k || !places[k]) return;
+    const v = e.target.value.trim(); places[k].floor = v === '' ? null : Math.max(0, Math.min(120, Math.round(+v)));
+    if (v === '') delete places[k].lift;
+    savePlaces(); toast(L('已儲存樓層', 'Floor saved'));
+  });
   on('tab', t => { if (t === 'saved') draw(true); });
   on('places', () => { smartAt = 0; draw(true); });
   on('favs', () => { favAt = 0; if (!$('v-saved').hidden) draw(true); });
@@ -81,13 +88,33 @@ function drawPlaces(){
     + (places.custom || []).map((c, i) => row('c' + i, c.label, c)).join('')
     + `<button class="btn-d sm addp" data-a="add" type="button">＋ ${L('加地點', 'Add place')}</button>`;
 }
+// 出門預留：自動（按樓層／地區密度／繁忙時間）或者手動固定分鐘
+function doorRow(){
+  const auto = S.set.doorMode !== 'manual';
+  const fl = (k, lab) => {
+    const p = places[k]; if (!p) return '';
+    const has = p.floor != null && p.floor !== '', lift = p.lift ?? (has ? +p.floor > 6 : null);
+    const est = has ? liftTime(p.floor, p.lift, false) : null, estPk = has ? liftTime(p.floor, p.lift, true) : null;
+    return `<div class="door-r"><b>${esc(lab)}</b>
+      <label class="door-f"><input type="number" inputmode="numeric" min="0" max="120" data-floor="${k}" value="${has ? esc(p.floor) : ''}" placeholder="—" aria-label="${esc(lab + L(' 樓層', ' floor'))}"><span>${L('樓', '/F')}</span></label>
+      <div class="seg sm">${[[true, '有𨋢', 'Lift'], [false, '冇𨋢', 'Stairs']].map(([v, zh, en]) => `<button type="button" data-a="lift" data-k="${k}" data-v="${v}" aria-pressed="${lift === v}" ${has ? '' : 'disabled'}>${L(zh, en)}</button>`).join('')}</div>
+      <small class="door-e">${has ? (est.min === estPk.min ? L(`約 ${est.min} 分鐘`, `~${est.min} min`) : L(`平時 ${est.min} 分鐘 · 朝早繁忙 ${estPk.min} 分鐘`, `${est.min} min · rush ${estPk.min} min`)) : L('填樓層就計得準啲', 'Add your floor for accuracy')}</small></div>`;
+  };
+  return `<div class="set-r door"><span>${L('出門預留：落樓＋等𨋢', 'Getting out: stairs + lift')}<small class="set-s">${auto
+      ? L('自動：村屋、低矮樓宇 1 分鐘；高樓地區 3 分鐘，平日朝早繁忙時間 4 分鐘。屋企、公司填咗樓層就按樓層同有冇𨋢計。由車站出發唔計。', 'Auto: 1 min for low-rise, 3 min in high-rise areas (4 at weekday rush hour). Add your floor below for an exact estimate.')
+      : L('每次出門都加呢個固定時間（由車站出發除外）。', 'Always add this fixed time (except from a stop).')}</small></span>
+    <div class="seg">${[['auto', '自動', 'Auto'], ['manual', '手動', 'Fixed']].map(([v, zh, en]) => `<button type="button" data-a="doorMode" data-v="${v}" aria-pressed="${(S.set.doorMode || 'auto') === v}">${L(zh, en)}</button>`).join('')}</div>
+    ${auto ? (places.home || places.work ? fl('home', L('屋企', 'Home')) + fl('work', L('學校／公司', 'School / Work')) : `<p class="door-n">${L('喺上面設定屋企同學校／公司，就可以填樓層。', 'Set Home and School / Work above to add floors.')}</p>`)
+      : `<div class="seg">${[0, 2, 3, 5, 8].map(v => `<button type="button" data-a="door" data-v="${v}" aria-pressed="${(S.set.door ?? 3) === v}">${v ? v + L(' 分', ' min') : L('唔使', 'None')}</button>`).join('')}</div>`}
+    ${auto && isLiftPeak() ? `<small class="door-n">${L('而家係平日朝早繁忙時間，等𨋢會計多啲。', 'It’s weekday rush hour now — lift waits are longer.')}</small>` : ''}</div>`;
+}
 function drawSettings(){
   const sp = [[60, '慢', 'Slow'], [75, '正常', 'Normal'], [90, '快', 'Fast']];
   $('setl').innerHTML = `
     <div class="set-r"><span>${L('語言', 'Language')}</span><div class="seg">${[['zh', '中文'], ['en', 'English']].map(([k, t]) => `<button type="button" data-a="lang" data-v="${k}" aria-pressed="${S.set.lang === k}">${t}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('字體大小', 'Text size')}<small class="set-s">${L('長者或者睇唔清可以揀大字', 'Larger text for easier reading')}</small></span><div class="seg">${[['normal', '標準', 'Normal'], ['large', '大', 'Large'], ['xl', '特大', 'X-Large']].map(([v, zh, en]) => `<button type="button" data-a="text" data-v="${v}" aria-pressed="${S.set.text === v}">${L(zh, en)}</button>`).join('')}</div></div>
     <div class="set-r"><span>${L('步速（計出門時間用）', 'Walking pace')}</span><div class="seg">${sp.map(([v, zh, en]) => `<button type="button" data-a="walk" data-v="${v}" aria-pressed="${S.set.walk === v}">${L(zh, en)}</button>`).join('')}</div></div>
-    <div class="set-r"><span>${L('出門預留：落樓＋等𨋢', 'Getting out: stairs + lift')}<small class="set-s">${L('由屋企或者公司出發先計，出門時間會早返呢幾分鐘。住高層、返工時間等𨋢耐就揀多啲。', 'Added when leaving home or work. Pick more for high floors or rush-hour lifts.')}</small></span><div class="seg">${[0, 2, 3, 5, 8].map(v => `<button type="button" data-a="door" data-v="${v}" aria-pressed="${(S.set.door ?? 3) === v}">${v ? v + L(' 分', ' min') : L('唔使', 'None')}</button>`).join('')}</div></div>
+    ${doorRow()}
     <div class="set-r"><span>${L('出門同落車通知', 'Leave & alight alerts')}</span><button class="btn-d sm" data-a="notif" type="button">${'Notification' in window ? (Notification.permission === 'granted' ? L('已開啟', 'On') : L('開啟', 'Turn on')) : L('唔支援', 'Unsupported')}</button></div>
     <div class="set-r"><span>${L('自動學識通勤習慣', 'Learn my commute')}<small class="set-s">${L('用出門倒數 3 日或以上，就會喺平時出門前自動出建議。紀錄只存喺呢部機。', 'After 3+ days of countdowns, suggests your usual trip automatically. Stored on this device only.')}</small>${learned().map(g => `<small class="set-s habit-l">· ${esc(describe(g))}</small>`).join('')}</span><div class="sh-inline"><div class="seg">${[['on', '開', 'On'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="learn" data-v="${v}" aria-pressed="${S.set.learn === v}">${L(zh, en)}</button>`).join('')}</div><button class="btn-d sm" data-a="forget" type="button">${L('清除紀錄', 'Clear')}</button></div></div>
     <div class="set-r"><span>${L('螢幕常亮（出門倒數時）', 'Keep screen on (countdown)')}<small class="set-s">${L('等車同搭車先開，電量低過 20% 自動停', 'Only while waiting or riding; pauses under 20% battery')}</small></span><div class="seg">${[['auto', '自動', 'Auto'], ['off', '關', 'Off']].map(([v, zh, en]) => `<button type="button" data-a="awake" data-v="${v}" aria-pressed="${S.set.awake === v}">${L(zh, en)}</button>`).join('')}</div></div>
@@ -157,6 +184,8 @@ function onClick(e){
   else if (a === 'walk') { S.set.walk = +b.dataset.v; saveSettings(); drawSettings(); toast(L('已更新步速', 'Pace updated')); }
   else if (a === 'notif') { if ('Notification' in window) Notification.requestPermission().then(() => drawSettings()); }
   else if (a === 'clear') { clearData().then(() => location.reload()); }
+  else if (a === 'doorMode') { S.set.doorMode = b.dataset.v; saveSettings(); smartAt = 0; drawSettings(); }
+  else if (a === 'lift') { const p = places[k]; if (p) { p.lift = b.dataset.v === 'true'; savePlaces(); } }
   else if (a === 'door') { S.set.door = +b.dataset.v; saveSettings(); smartAt = 0; drawSettings(); toast(L('已更新出門預留時間', 'Updated')); }
   else if (a === 'learn') { S.set.learn = b.dataset.v; saveSettings(); scheduleHabitNotifs(); smartAt = 0; draw(true); }
   else if (a === 'forget') { clearHabits(); scheduleHabitNotifs(); smartAt = 0; draw(true); toast(L('已清除通勤紀錄', 'Commute history cleared')); }

@@ -19,7 +19,7 @@ export const store = {
 export const S = {
   DB: null, IDX: new Map(), GRID: new Map(), NUMS: new Map(),
   here: null,
-  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto', text: 'normal', learn: 'on', door: 3}, store.get('settings', {})),
+  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto', text: 'normal', learn: 'on', door: 3, doorMode: 'auto'}, store.get('settings', {})),
   online: true, lastOk: 0, skew: store.get('skew', 0), wx: null
 };
 // 用伺服器時間校正手機時鐘（手機時間唔準都唔會倒數錯）；上次校正值會記低，開 app 第一秒已經準
@@ -179,8 +179,42 @@ export function dist(a, b){
 }
 // 天氣（落雨、黃雨、紅雨、風球）會令步行慢啲：S.wx.factor 由 wx.js 按天文台資料設定
 export const walkMin = m => Math.max(1, Math.ceil(m * 1.35 / (S.set.walk || 75) * (S.wx?.factor || 1)));
-// 出門預留（落樓 + 等𨋢）：由屋企／公司出發先計；由車站或者港鐵站出發就唔使
-export const doorMin = from => !from || from.kind === 'stop' || from.noDoor ? 0 : (S.set.door ?? 3);
+/* ---------- 出門預留：落樓 + 等𨋢（按樓層、有冇𨋢、地區密度同繁忙時間估計） ---------- */
+// 平日朝早返工返學時間，𨋢大堂排隊耐好多
+export function isLiftPeak(t = now()){
+  const d = new Date(t + 288e5), m = d.getUTCHours() * 60 + d.getUTCMinutes(), wd = dayIdx();
+  return wd >= 1 && wd <= 5 && m >= 7 * 60 + 15 && m <= 9 * 60 + 15;
+}
+// 知道樓層：冇𨋢（村屋、唐樓）行樓梯每層約 18 秒；有𨋢 = 等𨋢 + 𨋢行 + 行出大堂
+export function liftTime(floor, lift, peak = isLiftPeak()){
+  floor = Math.max(0, Math.round(+floor || 0));
+  if (floor === 0) return {min: 0, why: L('地下', 'ground floor')};
+  const hasLift = lift ?? floor > 6;                 // 未講有冇𨋢：7 樓或以上當有𨋢
+  if (!hasLift) return {min: Math.max(1, Math.round(floor * 0.3)), why: L(`${floor} 樓行樓梯`, `${floor}/F by stairs`)};
+  const m = 0.5 + (peak ? 2.5 : 1.3) + floor * 0.04 + (floor > 20 ? 0.5 : 0);
+  return {min: Math.max(1, Math.round(m)), why: L(`${floor} 樓搭𨋢${peak ? ' · 繁忙時間' : ''}`, `${floor}/F by lift${peak ? ' · rush hour' : ''}`)};
+}
+const HIGH = /邨|苑|城|花園|大廈|中心|廣場|閣|樓|園|court|garden|tower|plaza|cent(re|er)|estate|mansion|building|house(?=.*(estate|court))/i;
+const LOW = /村屋|丁屋|村(?!.*[邨苑])|village|cottage|鄉/i;
+// 出門要幾耐（分鐘）同原因。由車站／港鐵站出發 = 0
+export function doorInfo(from){
+  if (!from || from.kind === 'stop' || from.noDoor) return {min: 0, why: ''};
+  if (S.set.doorMode === 'manual') return {min: S.set.door ?? 3, why: L('你嘅設定', 'your setting')};
+  const peak = isLiftPeak();
+  // 屋企、公司、常用地點填咗樓層：用樓層計（最準）
+  const P = S.places || {};
+  for (const p of [P.home, P.work, ...(P.custom || [])]) if (p && p.floor != null && p.floor !== '' && p.lat != null && dist(p, from) < 120) return liftTime(p.floor, p.lift, peak);
+  // 地方名：村屋低矮、屋苑大廈高
+  const gps = from.mode === 'gps' || (from.here && S.here?.mode === 'gps');
+  const name = gps ? '' : (from.label || '') + ' ' + (from.name?.zh || '') + ' ' + (from.name?.en || '');
+  if (LOW.test(name)) return {min: 1, why: L('村屋／低矮樓宇', 'low-rise / village house')};
+  // 附近車站多 = 市區高樓；少 = 郊區低矮
+  const n = S.GRID.size ? stopsWithin(from, 300).length : 12;
+  if (HIGH.test(name) || n >= 12) return {min: peak ? 4 : 3, why: L(`高樓地區${peak ? ' · 繁忙時間' : ''}`, `high-rise area${peak ? ' · rush hour' : ''}`)};
+  if (n >= 4) return {min: 2, why: L('中等密度地區', 'medium-density area')};
+  return {min: 1, why: L('低密度地區，多數唔使搭𨋢', 'low-density area, usually no lift')};
+}
+export const doorMin = from => doorInfo(from).min;
 export const inHK = p => p.lat > HK.s && p.lat < HK.n && p.lng > HK.w && p.lng < HK.e;
 export const stopLoc = id => S.DB.stopList[id]?.location;
 export const stopName = id => nm(S.DB.stopList[id]?.name);

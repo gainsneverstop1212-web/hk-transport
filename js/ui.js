@@ -82,6 +82,7 @@ export const starBtn = (id, label) => `<button class="star" type="button" data-f
 
 /* ---------- 常用地點 ---------- */
 export const places = Object.assign({home: null, work: null, custom: []}, store.get('places', {}));
+S.places = places;                                 // 出門預留（落樓等𨋢）要用屋企／公司嘅樓層
 export const savePlaces = () => { store.set('places', places); emit('places'); };
 
 /* ---------- 返回鍵堆疊（Android 返回鍵 / 瀏覽器返回都會關閉最上層） ---------- */

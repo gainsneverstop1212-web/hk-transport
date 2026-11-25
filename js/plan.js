@@ -1,5 +1,5 @@
 // 港住走 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
-import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, doorMin, rideMin, cumTimes, avgWait, runningAt, railOpenAt, railNextOpen, legFare, mtrFare, money, stopLoc, stopName,
+import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, doorInfo, rideMin, cumTimes, avgWait, runningAt, railOpenAt, railNextOpen, legFare, mtrFare, money, stopLoc, stopName,
   hhmm, mins, now, toast, nextDepAfter, isMtrStation, tilesFor, routeLabel, routeTiles, lineTiles, coName, lineName, lineColor, lrtColor, coColor, icon, FERRY} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {attachPicker, go, on, places, savePlaces, openSheet} from './ui.js';
@@ -229,8 +229,8 @@ export async function planTrip(from, to, limit = 6, opt = {}){
   const cands = await staticPlan(from, to, opt.onStep, opt.arriveBy ? Math.max(now(), opt.arriveBy - 3600e3) : t0);
   opt.onStep?.(3);
   // 落樓 + 等𨋢：加入第一段步行（出門時間會早啲，唔會趕到氣咳）
-  const door = doorMin(from);
-  for (const c of cands) { c.door = door; c.walk0 += door; c.est = (c.est || 0) + door; }
+  const di = doorInfo(from), door = di.min;
+  for (const c of cands) { c.door = door; c.doorWhy = di.why; c.walk0 += door; c.est = (c.est || 0) + door; }
   const pick = [], perFirst = new Map();
   for (const c of cands) {                                    // 唔好全部都係同一條頭程
     const k = c.legs[0] ? rt(c.legs[0].key).route : 'walk';
@@ -463,7 +463,7 @@ function suggestHtml(){
 }
 
 export function legChips(o){
-  const dr = o.door ? `<span class="lc walk door" aria-label="${esc(L(`落樓等𨋢 ${o.door} 分鐘`, `${o.door} min lift/stairs`))}"><b>${L('落樓', 'Lift')}</b>${o.door}′</span>` : '';
+  const dr = o.door ? `<span class="lc walk door" title="${esc(o.doorWhy || '')}" aria-label="${esc(L(`落樓等𨋢 ${o.door} 分鐘`, `${o.door} min lift/stairs`) + (o.doorWhy ? '（' + o.doorWhy + '）' : ''))}"><b>${L('落樓', 'Lift')}</b>${o.door}′</span>` : '';
   if (o.walkOnly) return `${dr}<span class="lc walk">${icon.walk}${o.walk0 - (o.door || 0)}′</span>`;
   const parts = [`${dr}<span class="lc walk" aria-label="${esc(L(`行 ${o.walk0 - (o.door || 0)} 分鐘`, `walk ${o.walk0 - (o.door || 0)} min`))}">${icon.walk}${o.walk0 - (o.door || 0)}′</span>`];
   o.legs.forEach((l, i) => {
@@ -475,7 +475,8 @@ export function legChips(o){
   return parts.join('<span class="lc-sep" aria-hidden="true">›</span>');
 }
 export function steps(o){
-  const dTxt = o.door ? L(`落樓等𨋢 ${o.door} 分鐘，再`, `${o.door} min down & lift, then `) : '';
+  const why = o.doorWhy ? `<small class="why">（${esc(o.doorWhy)}）</small>` : '';
+  const dTxt = o.door ? L(`落樓等𨋢 ${o.door} 分鐘${why}，再`, `${o.door} min down & lift${why}, then `) : '';
   if (o.walkOnly) return `<li><b>${hhmm(o.leaveT)}</b> ${L(`出門，${dTxt}直接行過去，約 ${o.walk0 - (o.door || 0)} 分鐘`, `Leave, ${dTxt}walk there, about ${o.walk0 - (o.door || 0)} min`)}</li>`;
   const out = [], fg = new Map();
   for (const g of fareGroups(o.legs)) for (let k = g.from; k <= g.to; k++) fg.set(k, k === g.from ? (g.f != null ? ' · ' + money(g.f) + (g.to > g.from ? L('（港鐵全程）', ' (whole MTR trip)') : '') : '') : ' · ' + L('站內轉綫，唔使再俾錢', 'in-station change, no extra fare'));
