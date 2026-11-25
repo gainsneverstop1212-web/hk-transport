@@ -1,4 +1,4 @@
-// 港途 · 實時到站
+// 港住走 · 實時到站
 import {S, T, L, FERRY, nextDepartures, now, syncClock} from './core.js';
 
 let active = 0; const queue = [];

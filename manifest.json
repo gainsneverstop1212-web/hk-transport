@@ -1,6 +1,6 @@
 {
-  "name": "港途 · 香港附近到站",
-  "short_name": "港途",
+  "name": "港住走 · 香港巴士港鐵出門倒數",
+  "short_name": "港住走",
   "description": "附近車站、全港巴士小巴港鐵輕鐵實時到站",
   "lang": "zh-HK",
   "start_url": "./",

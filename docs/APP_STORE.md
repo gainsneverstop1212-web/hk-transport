@@ -1,4 +1,4 @@
-# 港途 · 上架 App Store 步驟
+# 港住走 · 上架 App Store 步驟
 
 網頁版（GitHub Pages）照舊運作。App 版用 Capacitor 將同一套網頁包成 iOS／Android app。
 

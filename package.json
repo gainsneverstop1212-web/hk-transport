@@ -2,7 +2,7 @@
   "name": "hk-transport",
   "private": true,
   "version": "1.0.0",
-  "description": "港途 · 香港交通到站（PWA + Capacitor App 版）",
+  "description": "港住走 · 香港交通到站（PWA + Capacitor App 版）",
   "scripts": {
     "build:app": "bash scripts/build-app.sh",
     "ios": "bash scripts/build-app.sh && npx cap sync ios && npx cap open ios",

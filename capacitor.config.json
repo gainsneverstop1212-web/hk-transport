@@ -1,6 +1,6 @@
 {
   "appId": "hk.gangtou.app",
-  "appName": "港途",
+  "appName": "港住走",
   "webDir": "www",
   "backgroundColor": "#111111",
   "ios": { "contentInset": "never" },

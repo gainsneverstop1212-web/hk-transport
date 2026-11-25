@@ -1,4 +1,4 @@
-// 港途 · 分享行程：一撳就喺 WhatsApp 話俾屋企人／朋友知你搭緊咩車、幾時到
+// 港住走 · 分享行程：一撳就喺 WhatsApp 話俾屋企人／朋友知你搭緊咩車、幾時到
 // 對方開條連結（share.html）就會見到嗰程車嘅實時到站同預計到達時間，唔使裝 app、唔使下載路線資料。
 // 冇伺服器、冇追蹤你嘅位置：連結只係包含路線、落車站同預計時間。
 import {S, esc, L, hhmm, stopName, routeLabel, icon, toast} from './core.js';

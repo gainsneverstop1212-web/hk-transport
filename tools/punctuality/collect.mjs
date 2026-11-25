@@ -1,4 +1,4 @@
-// 港途 · 準時度紀錄：定時記低到站預報（俾 GitHub Actions 排程行，亦可以喺自己部機行）
+// 港住走 · 準時度紀錄：定時記低到站預報（俾 GitHub Actions 排程行，亦可以喺自己部機行）
 // 用法：node tools/punctuality/collect.mjs <輸出資料夾>
 //   DURATION_SEC（預設 540）：行幾耐；INTERVAL_SEC（預設 30）：幾耐記一次
 // 輸出：<資料夾>/YYYY-MM-DD.ndjson（香港日期），每行 {"t":秒,"w":第幾個 watch,"e":[到站時間（秒）...],"s":[1=原定班次 0=實時...]}

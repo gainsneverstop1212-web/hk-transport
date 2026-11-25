@@ -1,4 +1,4 @@
-// 港途 · 附近車站
+// 港住走 · 附近車站
 import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, doorMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
   stopLoc, stopName, bearing, compass, icon, FERRY, toast, now, nextDepAfter} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';

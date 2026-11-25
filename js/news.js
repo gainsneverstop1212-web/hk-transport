@@ -1,4 +1,4 @@
-// 港途 · 通告（運輸署特別交通消息）
+// 港住走 · 通告（運輸署特別交通消息）
 import {S, $, esc, L, hhmm, lineName} from './core.js';
 import {on, favs} from './ui.js';
 

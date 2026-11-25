@@ -1,4 +1,4 @@
-// 港途 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
+// 港住走 · 點對點規劃：逐輪搜尋（最多搭 4 程車，即轉 3 次），再用實時到站計準時間
 import {S, $, esc, destHtml, store, L, nm, dist, stopsWithin, walkMin, doorMin, rideMin, cumTimes, avgWait, runningAt, railOpenAt, railNextOpen, legFare, mtrFare, money, stopLoc, stopName,
   hhmm, mins, now, toast, nextDepAfter, isMtrStation, tilesFor, routeLabel, routeTiles, lineTiles, coName, lineName, lineColor, lrtColor, coColor, icon, FERRY} from './core.js';
 import {cycle, etaFor} from './eta.js';
@@ -552,8 +552,8 @@ const walkNavUrl = () => IOS_UA ? `https://maps.apple.com/?saddr=${from.lat},${f
 function calReminder(o){
   const stamp = t => new Date(t).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
   const first = o.legs[0], name = first ? routeLabel(rt(first.key)) : '';
-  const title = L(`港途：${hhmm(o.leaveT)} 出門${name ? '搭 ' + name : ''}`, `HK GO: leave ${hhmm(o.leaveT)}${name ? ' for ' + name : ''}`).replace(/[,;\n]/g, ' ');
-  const desc = L(`去 ${labelOf(to)}，約 ${hhmm(o.arriveT)} 到。出門前返嚟港途睇最新班次。`, `To ${labelOf(to)}, arrive ~${hhmm(o.arriveT)}. Check HK GO for live times before leaving.`).replace(/[,;\n]/g, ' ');
+  const title = L(`港住走：${hhmm(o.leaveT)} 出門${name ? '搭 ' + name : ''}`, `Rushing HK: leave ${hhmm(o.leaveT)}${name ? ' for ' + name : ''}`).replace(/[,;\n]/g, ' ');
+  const desc = L(`去 ${labelOf(to)}，約 ${hhmm(o.arriveT)} 到。出門前返嚟港住走睇最新班次。`, `To ${labelOf(to)}, arrive ~${hhmm(o.arriveT)}. Check Rushing HK for live times before leaving.`).replace(/[,;\n]/g, ' ');
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//HKGO//Plan//ZH', 'BEGIN:VEVENT', `UID:hkgo-plan-${Date.now()}@hkgo`, `DTSTAMP:${stamp(Date.now())}`,
     `DTSTART:${stamp(o.leaveT)}`, `DTEND:${stamp(o.arriveT)}`, `SUMMARY:${title}`, `DESCRIPTION:${desc}`,
     'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title}`, 'TRIGGER:-PT5M', 'END:VALARM',

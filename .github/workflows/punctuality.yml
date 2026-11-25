@@ -1,4 +1,4 @@
-# 港途 · 準時度紀錄：每 10 分鐘行一次，每次連續記錄 9 分鐘（每 30 秒一次），結果存喺 punctuality-data 分支
+# 港住走 · 準時度紀錄：每 10 分鐘行一次，每次連續記錄 9 分鐘（每 30 秒一次），結果存喺 punctuality-data 分支
 # 公開 repo 嘅 GitHub Actions 免費。要記錄邊啲路線，改 tools/punctuality/watch.json。
 name: punctuality
 on:

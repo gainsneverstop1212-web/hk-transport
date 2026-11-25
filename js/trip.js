@@ -1,4 +1,4 @@
-// 港途 · 出門倒數模式（由出門、等車、搭車到落車提示）
+// 港住走 · 出門倒數模式（由出門、等車、搭車到落車提示）
 import {S, $, esc, store, L, nm, hhmm, mins, now, flaps, tilesFor, routeLabel, routeTiles, lineTiles, lineName, stopName, stopLoc, dist, rideMin, avgWait,
   speak, notify, toast, icon, saveSettings} from './core.js';
 import {cycle, etaFor} from './eta.js';
@@ -350,11 +350,11 @@ function calendar(){
   const add = (k, start, end, title, desc) => ev.push(['BEGIN:VEVENT', `UID:hkgo-${uid}-${k}@hkgo`, `DTSTAMP:${stamp(Date.now())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(Math.max(end, start + 60000))}`,
     `SUMMARY:${title.replace(/[,;\n]/g, ' ')}`, `DESCRIPTION:${desc.replace(/[,;\n]/g, ' ')}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title.replace(/[,;\n]/g, ' ')}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n'));
   const i0 = trip.li;
-  if (trip.stage === 'prep') { const l = trip.legs[0], lv = c.legs[0].boardT - walkOf(0) * 60000; add('leave', lv, c.legs[0].boardT, L(`港途：出門搭 ${rname(l)}`, `HK GO: leave for ${rname(l)}`), L(`${hhmm(lv)} 出門 · 行去 ${stopName(l.board)} · ${hhmm(c.legs[0].boardT)} 班車`, `Leave ${hhmm(lv)} for ${stopName(l.board)}`)); }
+  if (trip.stage === 'prep') { const l = trip.legs[0], lv = c.legs[0].boardT - walkOf(0) * 60000; add('leave', lv, c.legs[0].boardT, L(`港住走：出門搭 ${rname(l)}`, `Rushing HK: leave for ${rname(l)}`), L(`${hhmm(lv)} 出門 · 行去 ${stopName(l.board)} · ${hhmm(c.legs[0].boardT)} 班車`, `Leave ${hhmm(lv)} for ${stopName(l.board)}`)); }
   trip.legs.forEach((l, k) => {
     if (k < i0 || !c.legs[k] || l.aseq == null) return;
     const a = c.legs[k].alightT, nx = trip.legs[k + 1];
-    add('off' + k, a - 3 * 60000, a, L(`港途：準備喺 ${stopName(l.alight)} 落車`, `HK GO: get off at ${stopName(l.alight)}`), nx ? L(`落車後轉 ${rname(nx)}`, `Then change to ${rname(nx)}`) : L('就快到目的地', 'Almost there'));
+    add('off' + k, a - 3 * 60000, a, L(`港住走：準備喺 ${stopName(l.alight)} 落車`, `Rushing HK: get off at ${stopName(l.alight)}`), nx ? L(`落車後轉 ${rname(nx)}`, `Then change to ${rname(nx)}`) : L('就快到目的地', 'Almost there'));
   });
   if (!ev.length) { toast(L('揀咗落車站先可以加提醒', 'Pick an alight stop first')); return; }
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//HKGO//Trip//ZH', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n');

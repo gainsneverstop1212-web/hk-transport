@@ -30,7 +30,18 @@ a{color:#e6e6e6}
 .sign{position:sticky;top:0;z-index:40;background:linear-gradient(#111 0 var(--st),var(--yellow) var(--st));color:var(--ink);padding-top:var(--st)}
 .sign .wrap{display:flex;align-items:center;gap:10px;min-height:56px}
 .brand{display:flex;align-items:center;gap:10px;font:800 26px/1 var(--disp);margin:0;white-space:nowrap}
-.brand small{font:700 15px/1 var(--disp);letter-spacing:.04em;opacity:.75}
+/* 招牌字「港住走 Rushing HK」：黑色毛筆掃底（同時鐘字粒一樣嘅黑），港＝白、住走＝黃，跟原本 logo 配色 */
+.logo{position:relative;display:grid;justify-items:start;padding:5px 14px 6px 12px;transform:rotate(-3deg);line-height:1}
+.logo-bg{position:absolute;inset:-1px -4px -2px -6px;width:calc(100% + 10px);height:calc(100% + 3px);overflow:visible}
+.logo-ink{fill:var(--ink)}
+.logo-red{fill:#e4002b}
+.logo-swipe{fill:var(--yellow);opacity:.9}
+.logo-zh,.logo-en{position:relative;white-space:nowrap}
+.brand-sub{font:700 16px/1 var(--disp);letter-spacing:.04em;opacity:.8}
+.logo-zh{font:400 27px/1 "Ma Shan Zheng","Noto Sans TC",serif;letter-spacing:-.5px;color:#fff}
+.logo-zh b{font-weight:400}
+.logo-zh i,.logo-en i{font-style:normal;color:var(--yellow)}
+.logo-en{font:400 13px/1 "Kaushan Script","Barlow Condensed",cursive;color:#fff;margin:-1px 0 0 16px;letter-spacing:.02em}
 .lang{margin-left:auto;height:42px;min-width:44px;border:2px solid var(--ink);background:transparent;font:800 15px/1 var(--disp);color:var(--ink)}
 .clock{display:flex;gap:3px}
 .clock .f{background:var(--ink);color:var(--yellow);font:700 20px/1 var(--disp);width:22px;height:30px;display:grid;place-items:center;border-radius:3px}
@@ -560,7 +571,8 @@ body.paged .trip-pill{top:auto;bottom:calc(84px + var(--sb));right:12px}
   .f{min-width:16px;font-size:19px;height:28px}
   .eta .big .f{font-size:21px;min-width:19px;height:31px}
   .star{width:40px}
-  .brand small{display:none}
+  .logo-zh{font-size:24px}
+  .logo-en{font-size:12px}
   .hero h1{font-size:34px}
   .tb{height:92px;font-size:17px}
   .ritem{grid-template-columns:70px minmax(0,1fr) auto}

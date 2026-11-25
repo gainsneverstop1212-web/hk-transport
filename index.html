@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="港途">
+<meta name="apple-mobile-web-app-title" content="港住走">
 <meta name="description" content="香港巴士、小巴、港鐵、輕鐵實時到站、路線搜尋、轉車規劃同出門倒數">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -15,15 +15,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<!-- 招牌字：只下載「港住走 RushingHK」呢幾個字（幾 KB） -->
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&amp;family=Kaushan+Script&amp;text=%E6%B8%AF%E4%BD%8F%E8%B5%B0RushingHK&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/app.css">
-<title>港途 · 香港交通到站</title>
+<title>港住走 · 香港巴士港鐵出門倒數</title>
 </head>
 <body>
 <header class="sign">
   <div class="wrap">
-    <p class="brand">
-      <svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><rect width="30" height="30" rx="4" fill="#111"/><path d="M8 15h12m-5-6 6 6-6 6" stroke="#ffc917" stroke-width="3.2" fill="none" stroke-linecap="square"/></svg>
-      <span id="brandName">港途</span> <small id="brandSub">香港交通到站</small>
+    <p class="brand" id="brand" role="img" aria-label="港住走 Rushing HK">
+      <span class="logo" aria-hidden="true">
+        <svg class="logo-bg" viewBox="0 0 132 52" preserveAspectRatio="none"><path class="logo-red" d="M2 15 9 11 16 13 12 42 4 45 0 38z"/><path class="logo-ink" d="M9 9 30 6 62 7 96 3 124 2 131 8 127 17 129 26 124 37 126 44 98 46 64 49 33 48 6 50 3 42 7 33 4 22 8 15z"/><path class="logo-swipe" d="M52 33.5 129 28.5 127 31 54 35.5z"/></svg>
+        <span class="logo-zh"><b>港</b><i>住走</i></span>
+        <span class="logo-en">Rushing <i>HK</i></span>
+      </span>
     </p>
     <button class="lang" id="langBtn" type="button">EN</button>
     <div class="clock" id="clock" role="img" aria-label="現在時間"></div>

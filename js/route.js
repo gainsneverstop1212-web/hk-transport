@@ -1,4 +1,4 @@
-// 港途 · 路線搜尋 + 路線詳情
+// 港住走 · 路線搜尋 + 路線詳情
 import {S, $, esc, store, L, nm, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, lrtColor, tilesFor, LINES, coTag, coName, lineName, lineColor, darkText, stopLoc, stopName,
   dist, walkMin, serviceInfo, rideMin, cumTimes, fareAt, legFare, money, FERRY, icon, toast, stopsWithin} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';

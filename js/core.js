@@ -1,4 +1,4 @@
-// 港途 · 共用工具、數據載入、索引
+// 港住走 · 共用工具、數據載入、索引
 import {mtrFare, lrtFare} from './fares.js';
 export const DATA_URL = 'https://data.hkbus.app/routeFareList.min.json';
 export const HK = {s: 22.13, n: 22.58, w: 113.82, e: 114.45};

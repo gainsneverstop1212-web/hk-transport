@@ -1,4 +1,4 @@
-// 港途 · 開機
+// 港住走 · 開機
 import {S, $, esc, store, L, loadDb, buildIndex, flaps, saveSettings, now, syncClockNow, applyTextSize} from './core.js';
 import {go, setHere, startGps, on} from './ui.js';
 import {initNearby} from './nearby.js';
@@ -22,9 +22,7 @@ const TABS = [
 function shell(){
   applyTextSize();
   document.documentElement.lang = S.set.lang === 'en' ? 'en' : 'zh-HK';
-  document.title = L('港途 · 香港交通到站', 'HK GO · Hong Kong transit');
-  $('brandName').textContent = L('港途', 'HK GO');
-  $('brandSub').textContent = L('香港交通到站', 'HK transit');
+  document.title = L('港住走 · 香港巴士港鐵出門倒數', 'Rushing HK · When to leave for your bus & MTR');
   $('foot').innerHTML = L('到站時間來自運輸署 DATA.GOV.HK 及各營辦商開放數據，只供參考。路線整合：<a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">HK Bus Crawling@2021</a>；地圖及地址：地政總署、政府地址查詢服務。電車同紅色小巴暫時冇開放實時數據。',
     'Arrival times from the Transport Department (DATA.GOV.HK) and operators’ open data, for reference only. Route data: <a href="https://github.com/hkbus/hk-bus-crawling" target="_blank" rel="noopener">HK Bus Crawling@2021</a>; maps and addresses: Lands Department and the Address Lookup Service. Trams and red minibuses have no open real-time data.');
   $('tabs').setAttribute('aria-label', L('主選單', 'Main menu'));

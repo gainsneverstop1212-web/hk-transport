@@ -1,4 +1,4 @@
-// 港途 · 常用：智能主頁、常用地點、收藏路線、設定
+// 港住走 · 常用：智能主頁、常用地點、收藏路線、設定
 import {S, $, esc, store, L, nm, mins, hhmm, flaps, dayIdx, tilesFor, routeTiles, lineTiles, lrtTiles, lineName, stopName, dist, coTag, icon, saveSettings, clearData, refreshDb, onCellular, toast, applyTextSize} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, places, savePlaces, favs, toggleFav, openSheet, closeSheet, attachPicker} from './ui.js';

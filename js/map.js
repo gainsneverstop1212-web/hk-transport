@@ -1,4 +1,4 @@
-// 港途 · 地圖（Leaflet + 地政總署底圖）
+// 港住走 · 地圖（Leaflet + 地政總署底圖）
 import {S} from './core.js';
 
 let loading = null;
