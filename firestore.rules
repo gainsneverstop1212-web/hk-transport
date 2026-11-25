@@ -4,10 +4,11 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{uid} {
       allow read, delete: if request.auth != null && request.auth.uid == uid;
-      // 寫入：只限自己、只准呢幾個欄位、每份資料唔超過 900 KB
+      // 寫入：只限自己、只准呢幾個欄位（Firestore 每份文件本身上限 1 MB）
       allow create, update: if request.auth != null && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['data', 'meta', 'updatedAt'])
-        && request.resource.size() < 900 * 1024;
+        && request.resource.data.data is map
+        && request.resource.data.meta is map;
     }
     match /{document=**} { allow read, write: if false; }
   }
