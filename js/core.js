@@ -7,7 +7,8 @@ export const FERRY = new Set(['sunferry', 'fortuneferry', 'hkkf']);
 export const $ = id => document.getElementById(id);
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // 目的地名：括號部分唔好拆開兩行（例如「中環(交易廣場)」唔會剩低「場)」喺第二行）
-export const destHtml = s => esc(s).replace(/([(（][^()（）]*[)）])$/, '<span class="nw">$1</span>');
+// 只限短括號（6 個字以內）；長嘅照常換行，免得撐爆格仔
+export const destHtml = s => esc(s).replace(/([(（][^()（）]{1,6}[)）])$/, '<span class="nw">$1</span>');
 export const store = {
   get(k, d){ try { const v = localStorage.getItem('hkgo:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v){ try { localStorage.setItem('hkgo:' + k, JSON.stringify(v)); } catch {} },

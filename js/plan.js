@@ -215,9 +215,9 @@ export function fareGroups(legs){
   }
   return out;
 }
-// 「最早到」：如果兩個方案相差唔夠 4 分鐘，有實時到站嘅排先（估計班次嘅時間會變）
+// 「最早到」：嚴格按到達時間排（顯示出嚟一定由早到遲）；同一分鐘到就有實時到站嘅排先。估算方案會用橙色標明
 const SORTS = {
-  fast: (a, b) => { const d = a.arriveT - b.arriveT; if (Math.abs(d) < 4 * 60000 && !!a.unsure !== !!b.unsure) return a.unsure ? 1 : -1; return d || a.legs.length - b.legs.length; },
+  fast: (a, b) => Math.floor(a.arriveT / 60000) - Math.floor(b.arriveT / 60000) || (!!a.unsure - !!b.unsure) || a.legs.length - b.legs.length,
   cheap: (a, b) => (a.fareUnknown - b.fareUnknown) || (a.fare - b.fare) || a.arriveT - b.arriveT,
   walk: (a, b) => a.walkSum - b.walkSum || a.arriveT - b.arriveT,
   xfer: (a, b) => a.legs.length - b.legs.length || a.arriveT - b.arriveT
@@ -242,8 +242,7 @@ export async function planTrip(from, to, limit = 6, opt = {}){
   if (opt.arriveBy) {
     alive = alive.filter(o => o.arriveT <= opt.arriveBy + 60000);
     // 準時到嘅方案入面，出門最遲嘅排先（可以喺屋企留耐啲）
-    alive.sort((a, b) => b.leaveT - a.leaveT || a.legs.length - b.legs.length);
-    return tidy(alive, 'arrive').slice(0, limit);
+    return tidy(alive, 'arrive').sort((a, b) => b.leaveT - a.leaveT || a.legs.length - b.legs.length).slice(0, limit);
   }
   let ok = tidy(alive, sort);
   // 起碼留 3 個方案俾用家揀：唔夠就由被執走嘅方案入面補返
@@ -403,9 +402,12 @@ const legsSig = o => o.legs.map(l => l.key + l.board).join('>');
 /* ---------- 常去地點建議：查咗同一個目的地 3 次，問用家使唔使設做常用地點 ---------- */
 const dkey = p => p.lat.toFixed(3) + ',' + p.lng.toFixed(3);
 const isSavedPlace = p => [places.home, places.work, ...(places.custom || [])].some(x => x && dist(x, p) < 250);
+let lastCounted = '';
 function countDest(p){
   if (!p || p.here || isSavedPlace(p)) return;
   const c = store.get('destCount', {}), k = dkey(p);
+  if (k === lastCounted) return;                    // 轉排序、轉時間唔算多查一次
+  lastCounted = k;
   c[k] = (c[k] || 0) + 1; store.set('destCount', c);
 }
 function suggestHtml(){
@@ -453,7 +455,8 @@ function drawRes(){
     const sl = SORT_UI.find(x => x[0] === sort) || SORT_UI[0];
     const head = mode === 'arrive' ? L(`${results.length} 個方案 · ${localDT(at).replace('T', ' ')} 前到 · 出門最遲排先（按時間表估）`, `${results.length} options · arrive by ${localDT(at).replace('T', ' ')} · latest departure first (timetable)`)
       : `${L(`${results.length} 個方案 · 按${sl[1]}排`, `${results.length} options · ${sl[2].toLowerCase()} first`)}${mode === 'later' ? ' · ' + L(`${localDT(at).replace('T', ' ')} 出發（按時間表估）`, `leaving ${localDT(at).replace('T', ' ')} (timetable)`) : ' · ' + L('每分鐘自動更新', 'auto-updates every minute')}`;
-    html = suggestHtml() + `<p class="lbl pad">${head}</p>` + results.map((o, i) => {
+    const off = !navigator.onLine ? `<div class="notice"><p>${L('而家冇網絡：以下時間全部係時間表估算，未必準。', 'You’re offline — all times below are timetable estimates.')}</p></div>` : '';
+    html = off + suggestHtml() + `<p class="lbl pad">${head}</p>` + results.map((o, i) => {
       const tot = Math.max(1, Math.round((o.arriveT - o.leaveT) / 60000)), lv = mins(o.leaveT);
       const xf = Math.max(0, o.legs.length - 1);
       const sched = mode !== 'now';

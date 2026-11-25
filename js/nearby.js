@@ -120,8 +120,9 @@ function makeGroups(){
       g.cos.add(e.co);
       if (e.co === 'mtr' || e.co === 'lightRail') continue;
       if (e.seq === st.length - 1) continue;
-      // 同一條路線、同一個目的地（資料入面有時有大細楷唔同嘅重複 key）：合併成一行
-      const rk = r.route + '|' + (r.dest?.zh || '') + '|' + (r.serviceType ?? '');
+      // 同一條路線、同一個目的地合併成一行：資料入面城巴每個班次變化（+1、+2…）同大細楷唔同都係獨立 key，
+      // 但到站時間一樣，唔合併就會見到兩行一模一樣；特別班嘅班次會一齊顯示
+      const rk = r.route + '|' + (r.dest?.zh || '').replace(/\s+/g, '');
       let row = g.rows.get(rk);
       if (!row) { row = {kind: 'bus', key: e.key, co: e.co, cos: new Set(), route: r.route, dest: r.dest, etas: [], note: '', srcs: []}; g.rows.set(rk, row); }
       row.cos.add(e.co);
