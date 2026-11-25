@@ -212,7 +212,7 @@ function timed(url, opt = {}, ms = 6000){
   return fetch(url, {...opt, signal: ctl.signal}).finally(() => clearTimeout(t));
 }
 async function alsSearch(q){
-  const r = await timed('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=10', {headers: {Accept: 'application/json'}});
+  const r = await timed('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=10', {headers: {Accept: 'application/json'}}, 10000);
   const j = await r.json(), out = [];
   for (const s of j.SuggestedAddress || []) {
     const p = s.Address?.PremisesAddress || {}, c = p.ChiPremisesAddress || {}, e = p.EngPremisesAddress || {}, g = p.GeospatialInformation || {};
@@ -254,17 +254,39 @@ function matchScore(x, q){
   for (let i = 0; i + 2 <= nq.length; i++) if (/[^\x00-\x7f]/.test(nq[i]) && name.includes(nq.slice(i, i + 2))) return 5;
   return 9;
 }
-export async function searchPlaces(q){
-  q = q.trim(); if (q.length < 2) return {list: [], failed: false};
-  const [a, o] = await Promise.allSettled([alsSearch(q), osmSearch(q)]);
-  const failed = a.status === 'rejected' && o.status === 'rejected';
+// 村屋地址：大家慣咗講「一區」，政府地址庫用「第一區」
+const normAddr = q => q.replace(/([村圍])([一二三四五六七八九十]+區)/g, (m, a, b) => a + '第' + b);
+// 合併、排次序（每個來源返嚟就可以即刻用，唔使等齊兩個）
+function rankPlaces(q, osm, als){
   const addrLike = /\d|號|街|道|路|里|徑/.test(q);
-  const raw = [...(o.value || []), ...(a.value || [])].map(x => ({...x, ms: matchScore(x, q) + (x.road ? 1.5 : 0) + (x.src === (addrLike ? 'osm' : 'als') ? 0.3 : 0)}));
+  const raw = [...osm, ...als].map(x => ({...x, ms: matchScore(x, q) + (x.road ? 1.5 : 0) + (x.src === (addrLike ? 'osm' : 'als') ? 0.3 : 0)}));
+  // 有門牌號碼：號碼完全一樣排先，號碼唔同嘅標明「最接近」
+  const num = (/(\d+[A-Za-z]?)\s*號?\s*$/.exec(q) || [])[1];
+  if (num) for (const x of raw) { const hit = new RegExp(`(^|\\D)${num}號`).test(x.name.zh) || new RegExp(`(^|\\D)${num}(\\D|$)`).test(x.name.en || ''); if (hit) x.ms -= 2; else if (x.whole) x.ms += 1; else if (x.src === 'als') x.near = true; }
   const ranked = raw.filter(x => x.ms < 9).sort((x, y) => x.ms - y.ms || (S.here ? dist(S.here, x) - dist(S.here, y) : 0));
-  // 同名、相距唔遠就當同一個地方
   const out = [];
   for (const x of ranked) if (!out.some(y => norm(y.name.zh) === norm(x.name.zh) && dist(x, y) < 400)) out.push(x);   // 醫院、體育園呢類大地方，兩個來源嘅點可以相距幾百米
-  return {list: out.slice(0, 8), failed};
+  for (const x of out) if (x.near) x.sub = {zh: '最接近嘅地址 · ' + (x.sub?.zh || ''), en: 'Closest address · ' + (x.sub?.en || '')};
+  return out.slice(0, 8);
+}
+// onPart：任何一個來源返嚟就即刻顯示（手機網絡慢都唔會一直「搵緊」）
+export async function searchPlaces(q, onPart){
+  q = q.trim(); if (q.length < 2) return {list: [], failed: false};
+  const qa = normAddr(q);
+  let osm = [], als = [], fails = 0;
+  // 地址搵唔到完全吻合：再搵條村／條街本身，起碼可以揀到附近（例如「掃管笏村」）
+  const base = /\d/.test(qa) ? qa.replace(/第?[一二三四五六七八九十]*區?\s*\d+[A-Za-z]?\s*號?\s*$/, '').replace(/\d+[A-Za-z]?\s*號?\s*$/, '').trim() : '';
+  const alsAll = async () => {
+    const main = await alsSearch(qa);
+    if (base && base.length >= 2 && base !== qa) { try { const b = (await alsSearch(base)).slice(0, 1).map(x => ({...x, whole: true, name: {zh: base, en: x.name.en}, sub: {zh: L('成條村／成條街（大概位置）', 'Whole village / street (approx.)'), en: 'Whole village / street (approx.)'}})); main.push(...b); } catch {} }
+    return main;
+  };
+  const step = () => onPart?.(rankPlaces(q, osm, als));
+  await Promise.all([
+    alsAll().then(r => { als = r; step(); }, () => { fails++; }),
+    osmSearch(q).then(r => { osm = r; step(); }, () => { fails++; })
+  ]);
+  return {list: rankPlaces(q, osm, als), failed: fails === 2};
 }
 // 一個全域監聽：撳出面就收埋所有建議清單（唔會每個搜尋框加一個）
 document.addEventListener('click', e => {
@@ -272,7 +294,7 @@ document.addEventListener('click', e => {
 });
 // 搜尋框 + 建議清單；onPick({lat,lng,label,kind})
 export function attachPicker(input, box, onPick, opt = {}){
-  let tq, seq = 0, list = [], placesFailed = false;
+  let tq, seq = 0, list = [], placesFailed = false, pickWhenReady = false;
   const draw = (alias, stops, plc, loading) => {
     const extra = [];
     if (opt.here && S.here) extra.push({kind: 'here', name: S.here.mode === 'manual' ? {zh: `目前地點：${S.here.label}`, en: `Current: ${S.here.label}`} : {zh: '你嘅位置（GPS）', en: 'Your location (GPS)'}, lat: S.here.lat, lng: S.here.lng});
@@ -301,7 +323,7 @@ export function attachPicker(input, box, onPick, opt = {}){
     box.classList.add('on');
   };
   input.addEventListener('input', () => {
-    clearTimeout(tq);
+    clearTimeout(tq); pickWhenReady = false;
     const q = input.value, my = ++seq, al = aliasOf(q);
     const alias = al?.code && S.DB.stopList[al.code] ? [{kind: 'alias', station: true, name: {zh: al.zh, en: al.en}, sub: {zh: '港鐵站', en: 'MTR station'}, ...S.DB.stopList[al.code].location}]
       : al?.pt ? [{kind: 'alias', name: {zh: al.zh, en: al.en}, sub: {zh: '地標', en: 'Landmark'}, lat: al.pt[0], lng: al.pt[1]}] : [];
@@ -309,7 +331,11 @@ export function attachPicker(input, box, onPick, opt = {}){
     const wantPlaces = opt.places && (al?.q || q).trim().length >= 2;
     draw(alias, stops, [], wantPlaces);
     placesFailed = false;
-    if (wantPlaces) tq = setTimeout(async () => { const p = await searchPlaces(al?.q || q); if (my !== seq) return; placesFailed = p.failed; draw(alias, stops, p.list, false); }, 300);
+    if (wantPlaces) tq = setTimeout(async () => {
+      const p = await searchPlaces(al?.q || q, part => { if (my === seq && part.length) draw(alias, stops, part, true); });
+      if (my !== seq) return; placesFailed = p.failed; draw(alias, stops, p.list, false);
+      if (pickWhenReady) { pickWhenReady = false; const b = [...box.querySelectorAll('button[data-i]')].find(b => list[+b.dataset.i]?.kind === 'place') || box.querySelector('button[data-i]'); b?.click(); }
+    }, 300);
   });
   let picked = false;
   input.addEventListener('focus', () => { picked = false; if (!input.value) draw([], [], [], false); else input.select?.(); });
@@ -320,7 +346,14 @@ export function attachPicker(input, box, onPick, opt = {}){
     if (typed !== cur) { input.value = cur; if (typed) toast(L('請喺建議清單揀一個地點', 'Pick a place from the suggestions')); }
     box.classList.remove('on');
   }, 300));
-  input.addEventListener('keydown', e => { if (e.key === 'Escape') box.classList.remove('on'); if (e.key === 'Enter') box.querySelector('button')?.click(); });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') box.classList.remove('on');
+    if (e.key !== 'Enter' || e.isComposing) return;              // 中文輸入法揀字嗰下唔當確認
+    e.preventDefault();
+    // 地址仲搵緊：等結果返嚟先揀，唔好揀咗個唔相關嘅巴士站
+    if (box.innerText.includes(L('搵緊地方', 'Searching places')) && /\d|號|村|街|道|路/.test(input.value)) { pickWhenReady = true; return; }
+    box.querySelector('button[data-i]')?.click();
+  });
   box.addEventListener('click', e => {
     const b = e.target.closest('button[data-i]'); if (!b) return;
     const x = list[+b.dataset.i];

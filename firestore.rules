@@ -1,0 +1,14 @@
+// 港住走 · Firestore 安全規則：每個用家只可以讀寫、刪除自己嗰份資料
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      // 寫入：只限自己、只准呢幾個欄位、每份資料唔超過 900 KB
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['data', 'meta', 'updatedAt'])
+        && request.resource.size() < 900 * 1024;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

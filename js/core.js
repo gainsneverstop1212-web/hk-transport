@@ -9,10 +9,12 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 // 目的地名：括號部分唔好拆開兩行（例如「中環(交易廣場)」唔會剩低「場)」喺第二行）
 // 只限短括號（6 個字以內）；長嘅照常換行，免得撐爆格仔
 export const destHtml = s => esc(s).replace(/([(（][^()（）]{1,6}[)）])$/, '<span class="nw">$1</span>');
+// 本機儲存；有登入帳戶嘅話，onChange 會通知 account.js 同步去雲端
 export const store = {
+  onChange: null,
   get(k, d){ try { const v = localStorage.getItem('hkgo:' + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v){ try { localStorage.setItem('hkgo:' + k, JSON.stringify(v)); } catch {} },
-  del(k){ try { localStorage.removeItem('hkgo:' + k); } catch {} }
+  set(k, v, quiet){ try { localStorage.setItem('hkgo:' + k, JSON.stringify(v)); } catch {} if (!quiet) store.onChange?.(k); },
+  del(k, quiet){ try { localStorage.removeItem('hkgo:' + k); } catch {} if (!quiet) store.onChange?.(k); }
 };
 
 /* ---------- 全域狀態 ---------- */

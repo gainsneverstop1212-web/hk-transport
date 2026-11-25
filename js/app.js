@@ -10,6 +10,7 @@ import {initTrip} from './trip.js';
 import {initWx} from './wx.js';
 import {initAlerts} from './alerts.js';
 import {dueCommute} from './habit.js';
+import {initAccount} from './account.js';
 
 const TABS = [
   ['near', '附近', 'Nearby', '<path d="M12 2 4 21l8-4 8 4z" fill="currentColor"/>'],
@@ -61,7 +62,9 @@ async function boot(){
   await new Promise(r => setTimeout(r, 20));
   buildIndex();
   $('boot').remove();
-  initWx();
+  initWx(); initAccount();
+  // 請瀏覽器唔好喺空間唔夠時清走 app 資料（常用地點、設定）；iPhone 加咗去主畫面效果最好
+  try { navigator.storage?.persist?.(); } catch {}
   initNearby(); initRoute(); initPlan(); initSaved(); initNews(); initTrip(); initAlerts();
   // 而家係你平時出門前後：直接開常用頁（出門倒數），唔使自己揀
   const saved = store.get('place', null);

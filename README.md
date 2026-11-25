@@ -11,6 +11,8 @@
 - **轉車實時判斷**：搭緊車就講你知落車後邊班趕得切、邊班趕唔切
 - **準時度紀錄**：GitHub Actions 定時記錄到站預報，累積「通常遲幾多」同「幽靈巴士」數據，見 [tools/punctuality](tools/punctuality/README.md)
 
+- **帳戶（Apple／Google 登入）**：設定、常用地點（連樓層）、常用路線、通勤紀錄同步到雲端；開通步驟見 [docs/ACCOUNT_SETUP.md](docs/ACCOUNT_SETUP.md)
+
 - 數據：運輸署 DATA.GOV.HK 及各營辦商開放數據；路線整合來自 [hkbus/hk-bus-crawling](https://github.com/hkbus/hk-bus-crawling)
 - PWA：可以「加到主畫面」
 - 到站時間只供參考

@@ -8,14 +8,17 @@ import {startTrip} from './trip.js';
 import {dueCommute, learned, describe, clearHabits, fmtMin, scheduleHabitNotifs} from './habit.js';
 import {badLines, legLine, lineText} from './alerts.js';
 import {wxLine} from './wx.js';
+import {accountHtml, onAccountClick} from './account.js';
 
 let confirmCell = false, smart = null, smartAt = 0, smartBusy = false, favEta = new Map(), favAt = 0;
 export function initSaved(){
   $('v-saved').innerHTML = `<div class="wrap"><div id="smart"></div>
     <h2 class="sec">${L('常用地點', 'Places')}</h2><div id="plc" class="plc"></div>
     <h2 class="sec">${L('常用路線', 'Pinned routes')}</h2><div id="favl"></div>
-    <h2 class="sec">${L('設定', 'Settings')}</h2><div id="setl" class="setl"></div></div>`;
-  $('v-saved').addEventListener('click', onClick);
+    <h2 class="sec">${L('設定', 'Settings')}</h2><div id="acct"></div><div id="setl" class="setl"></div></div>`;
+  $('v-saved').addEventListener('click', e => { if (!onAccountClick(e)) onClick(e); });
+  const drawAcct = () => { $('acct').innerHTML = accountHtml(); };
+  drawAcct(); on('account', drawAcct);
   // 樓層：打完先儲（唔會一路打一路重畫令輸入框失焦）
   $('v-saved').addEventListener('change', e => {
     const k = e.target.dataset?.floor; if (!k || !places[k]) return;

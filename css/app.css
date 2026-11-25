@@ -689,3 +689,16 @@ body.bigtext .star{width:48px;height:48px}
 .door-e{grid-area:est;color:var(--grey);font-size:13px}
 .door-n{flex:1 1 100%;margin:6px 0 0;color:var(--grey);font-size:13px}
 .steps li small.why{display:inline;margin:0;color:var(--grey);font-size:.82em}
+/* 帳戶 */
+.acct{display:grid;gap:10px;background:#151515;border:1px solid #333;padding:14px;margin:0 0 12px}
+.acct-t b{display:block;font-size:17px}
+.acct-t small{display:block;color:var(--grey);font-size:13px;line-height:1.45;margin-top:2px}
+.acct-b{display:flex;align-items:center;justify-content:center;gap:10px;height:48px;border:0;border-radius:8px;font:600 16px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;cursor:pointer}
+.acct-b.apple{background:#fff;color:#000}
+.acct-b.google{background:#fff;color:#1f1f1f;border:1px solid #dadce0}
+.acct-b:disabled{opacity:.6}
+.acct-p{color:#8a8a8a;font-size:12px;line-height:1.4}
+.acct.in{grid-template-columns:auto minmax(0,1fr);align-items:center}
+.acct-av{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--yellow);color:var(--ink);font:800 20px/1 var(--disp)}
+.acct-x{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
+.btn-d.danger{color:#ff8a80;border-color:#5a2a26}
