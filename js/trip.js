@@ -38,7 +38,7 @@ function checkShift(cur, i){
   lastBoard = {key, t: cur.boardT};
 }
 function start(show){
-  lists = trip.legs.map(() => null); lastBoard = null;
+  lists = trip.legs.map(() => null); lastBoard = null; shiftMsg = ''; shiftUntil = 0;
   clearInterval(tick); clearInterval(poll);
   tick = setInterval(paint, 1000);
   poll = setInterval(() => { if (!document.hidden) load(); }, 20000);
@@ -110,7 +110,7 @@ async function scheduleNative(){
 function cancelNative(){ nativeSig = ''; try { LN()?.cancel({notifications: NIDS.map(id => ({id}))}); } catch {} }
 
 /* ---------- 計時間 ---------- */
-// 第一程步行時間 + 用家自訂預留（天橋、紅綠燈、等𨋢）：直線距離計唔到呢啲
+// 第一程步行時間 + 用家自訂預留（天橋、紅綠燈、等電梯）：直線距離計唔到呢啲
 const walkOf = i => i === 0 ? trip.walk0 + (trip.buf || 0) : (trip.legs[i].walk || 0);
 const BUFS = [0, 3, 5];
 function chain(){
@@ -253,7 +253,7 @@ function paint(force){
       <div class="trip-lines">${lines.filter(Boolean).map(x => `<p>${x}</p>`).join('')}</div>
       <div class="trip-btns">${btns.map(([a, k, ic, t]) => `<button class="tb ${k}" data-a="${a}" type="button">${ic}<span>${t}</span></button>`).join('')}</div>
       ${note ? `<p class="trip-note">${esc(note)}${IOS ? L('。iPhone 鎖咗機就唔會響。', '. iPhone won’t alert while locked.') : ''}</p>` : ''}
-      ${trip.stage === 'prep' ? `<button class="trip-cal" data-a="buf" type="button">${icon.walk}<span>${L(`預留時間 +${trip.buf || 0} 分鐘（天橋、紅綠燈、等𨋢）· 撳一下改`, `Extra time +${trip.buf || 0} min (footbridges, lights, lifts) · tap to change`)}</span></button>` : ''}
+      ${trip.stage === 'prep' ? `<button class="trip-cal" data-a="buf" type="button">${icon.walk}<span>${L(`預留時間 +${trip.buf || 0} 分鐘（天橋、紅綠燈、等電梯）· 撳一下改`, `Extra time +${trip.buf || 0} min (footbridges, lights, lifts) · tap to change`)}</span></button>` : ''}
       ${trip.stage !== 'done' ? `<button class="trip-cal" data-a="cal" type="button">${icon.bell}<span>${IOS ? L('加入行事曆提醒（鎖機都會響）', 'Add calendar alarms (work when locked)') : L('加入行事曆提醒', 'Add calendar alarms')}</span></button>` : ''}
       ${wantWake ? `<p class="trip-note dim">${L('螢幕會保持常亮', 'Screen stays on')}${lowBatt ? '' : ''}</p>` : lowBatt && S.set.awake !== 'off' ? `<p class="trip-note dim">${L('電量低過 20%，已停用螢幕常亮', 'Battery below 20% — keep-awake paused')}</p>` : ''}
     </div>
