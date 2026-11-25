@@ -361,6 +361,7 @@ export function initPlan(){
     if (!from || from.here) { from = toPoint(p, true); fi.value = labelOf(from); }
     if (to?.here) { to = toPoint(p, true); ti.value = labelOf(to); }
     if (!to) drawEmpty();                           // 攞到位置之後收起「未有起點」提示
+    else if (!results && from && !$('v-plan').hidden && !$('pRes').querySelector('.loading')) run();   // 計緊就唔好重新開始（GPS 幾秒更新一次）   // 揀咗目的地先有位置：位置一到就自動計，唔會停喺「揀起點」
   });
   if ((!from || from.here) && S.here) from = toPoint(S.here, true);
   fi.value = labelOf(from); ti.value = labelOf(to);

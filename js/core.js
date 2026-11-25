@@ -196,9 +196,19 @@ export function liftTime(floor, lift, peak = isLiftPeak()){
 }
 const HIGH = /邨|苑|城|花園|大廈|中心|廣場|閣|樓|園|court|garden|tower|plaza|cent(re|er)|estate|mansion|building|house(?=.*(estate|court))/i;
 const LOW = /村屋|丁屋|村(?!.*[邨苑])|village|cottage|鄉/i;
+const WALKUP = /唐樓|walk-?up/i;
+const OUTDOOR = /公園|泳灘|海濱|長廊|郊野|山頂|碼頭|球場|運動場|park\b|beach|promenade|pier/i;
 // 出門要幾耐（分鐘）同原因。由車站／港鐵站出發 = 0
+let doorMemo = {k: '', t: 0, v: null};
 export function doorInfo(from){
   if (!from || from.kind === 'stop' || from.noDoor) return {min: 0, why: ''};
+  const k = [from.lat, from.lng, from.label, from.mode, from.here, S.set.doorMode, S.set.door, JSON.stringify([S.places?.home, S.places?.work, S.places?.custom])].join('|');
+  if (doorMemo.k === k && Date.now() - doorMemo.t < 5000) return doorMemo.v;
+  const v = doorCalc(from);
+  doorMemo = {k, t: Date.now(), v};
+  return v;
+}
+function doorCalc(from){
   if (S.set.doorMode === 'manual') return {min: S.set.door ?? 3, why: L('你嘅設定', 'your setting')};
   const peak = isLiftPeak();
   // 屋企、公司、常用地點填咗樓層：用樓層計（最準）
@@ -207,7 +217,9 @@ export function doorInfo(from){
   // 地方名：村屋低矮、屋苑大廈高
   const gps = from.mode === 'gps' || (from.here && S.here?.mode === 'gps');
   const name = gps ? '' : (from.label || '') + ' ' + (from.name?.zh || '') + ' ' + (from.name?.en || '');
+  if (OUTDOOR.test(name)) return {min: 0, why: L('戶外地方', 'outdoors')};
   if (LOW.test(name)) return {min: 1, why: L('村屋／低矮樓宇', 'low-rise / village house')};
+  if (WALKUP.test(name)) return {min: 2, why: L('唐樓行樓梯', 'walk-up building')};
   // 附近車站多 = 市區高樓；少 = 郊區低矮
   const n = S.GRID.size ? stopsWithin(from, 300).length : 12;
   if (HIGH.test(name) || n >= 12) return {min: peak ? 4 : 3, why: L(`高樓地區${peak ? ' · 繁忙時間' : ''}`, `high-rise area${peak ? ' · rush hour' : ''}`)};

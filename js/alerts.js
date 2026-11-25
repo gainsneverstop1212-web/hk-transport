@@ -53,8 +53,10 @@ export async function checkAlerts(force){
     // 新消息先通知（每則只通知一次，紀錄保留兩日）
     const seen = store.get('alertSeen', {}), t = Date.now();
     for (const [id, ts] of Object.entries(seen)) if (t - ts > 2 * 864e5) delete seen[id];
+    let sent = 0;
     for (const a of out) if (!seen[a.id]) {
       seen[a.id] = t;
+      if (sent++ >= 2) continue;                    // 一次過最多彈 2 個通知，其餘睇橫額
       notify(L(`你常用嘅 ${a.lines.map(lineText).join('、')} 受影響`, `${a.lines.map(lineText).join(', ')} affected`), a.text, 'hkgo-alert');
     }
     store.set('alertSeen', seen);
@@ -64,6 +66,8 @@ export async function checkAlerts(force){
   } finally { busy = false; }
 }
 
+// 常用頁有嘢可以重新計（屋企、公司或者學識咗嘅通勤）先俾「第二條路線」
+const canReroute = () => !!(S.places?.home || S.places?.work || habitLines().length);
 function draw(){
   const el = $('alertBar'); if (!el) return;
   const list = active.filter(a => !hidden.has(a.id));
@@ -71,7 +75,7 @@ function draw(){
   el.innerHTML = list.slice(0, 2).map(a => `<div class="alert-row" data-id="${esc(a.id)}">
     <span class="al-i" aria-hidden="true">!</span>
     <div class="al-t"><b>${esc(L(`你常用嘅 ${a.lines.map(lineText).join('、')} 受影響`, `${a.lines.map(lineText).join(', ')} affected`))}</b><small>${esc(a.text)}</small></div>
-    <div class="al-b"><button class="btn-y sm" type="button" data-al="alt">${L('第二條路線', 'Other route')}</button>
+    <div class="al-b">${canReroute() ? `<button class="btn-y sm" type="button" data-al="alt">${L('第二條路線', 'Other route')}</button>` : ''}
     ${a.kind === 'news' ? `<button class="btn-d sm" type="button" data-al="news">${L('詳情', 'Details')}</button>` : ''}
     <button class="icon-btn al-x" type="button" data-al="x" aria-label="${L('收埋', 'Dismiss')}">✕</button></div></div>`).join('')
     + (list.length > 2 ? `<p class="al-more">${L(`仲有 ${list.length - 2} 則`, `${list.length - 2} more`)}</p>` : '');

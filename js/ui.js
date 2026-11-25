@@ -55,7 +55,7 @@ export function startGps(){
     else { Object.assign(S.here, {acc: p.acc, at: p.at, lat: better ? p.lat : S.here.lat, lng: better ? p.lng : S.here.lng}); emit('acc', p); }
   };
   const onErr = err => {
-    if (err.code === 1) { stopGps(); emit('gps', 'denied'); return; }
+    if (err.code === 1) { store.del('gpsUsed'); stopGps(); emit('gps', 'denied'); return; }   // 拒絕咗就唔好下次開 app 再自動問
     // timeout／暫時攞唔到：唔停，繼續等；太耐冇位置就重新開一次（部分 iPhone timeout 之後唔會再報位置）
     if (S.here?.mode !== 'gps') emit('gps', 'busy');
     clearTimeout(retryT);
@@ -237,7 +237,7 @@ async function osmSearch(q){
     const street = pr.street ? zhPart(pr.street) : null;
     const subZh = [cat?.[0], street && (street[0] + (pr.housenumber ? pr.housenumber + '號' : '')), dzh].filter(Boolean).join(' · ');
     const subEn = [cat?.[1], street && [pr.housenumber, street[1]].filter(Boolean).join(' '), den].filter(Boolean).join(' · ');
-    out.push({kind: 'place', src: 'osm', name: {zh, en}, sub: {zh: subZh, en: subEn}, lat, lng, road: /^(primary|secondary|tertiary|residential|unclassified|living_street)$/.test(pr.osm_value) && pr.osm_key === 'highway'});
+    out.push({kind: 'place', src: 'osm', outdoor: /^(park|beach|viewpoint|pier|ferry_terminal|garden|playground|pitch|stadium|attraction)$/.test(pr.osm_value) || pr.osm_key === 'highway', name: {zh, en}, sub: {zh: subZh, en: subEn}, lat, lng, road: /^(primary|secondary|tertiary|residential|unclassified|living_street)$/.test(pr.osm_value) && pr.osm_key === 'highway'});
   }
   return out;
 }
@@ -327,6 +327,6 @@ export function attachPicker(input, box, onPick, opt = {}){
     picked = true;
     box.classList.remove('on'); input.value = opt.keep ? nm(x.name) : ''; input.blur();
     // 車站（包括「港大」呢類港鐵站叫法）唔使計落樓等𨋢
-    onPick({lat: x.lat, lng: x.lng, label: nm(x.name), name: x.name, kind: x.kind, noDoor: x.kind === 'stop' || !!x.station});
+    onPick({lat: x.lat, lng: x.lng, label: nm(x.name), name: x.name, kind: x.kind, noDoor: x.kind === 'stop' || !!x.station || !!x.outdoor});
   });
 }

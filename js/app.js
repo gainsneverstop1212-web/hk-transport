@@ -64,9 +64,9 @@ async function boot(){
   initWx();
   initNearby(); initRoute(); initPlan(); initSaved(); initNews(); initTrip(); initAlerts();
   // 而家係你平時出門前後：直接開常用頁（出門倒數），唔使自己揀
-  go(dueCommute() ? 'saved' : store.get('tab', 'near'));
   const saved = store.get('place', null);
   if (saved) setHere({...saved, mode: 'manual'});
+  go(dueCommute() ? 'saved' : store.get('tab', 'near'));
   // 舊版 iPhone Safari 答唔到「有冇定位權限」：之前用過 GPS 就照開，唔好停留喺上次手動揀嘅地點
   const autoGps = () => { if (store.get('gpsUsed', false)) startGps(); };
   if (navigator.permissions?.query) navigator.permissions.query({name: 'geolocation'}).then(p => { if (p.state === 'granted') startGps(); else if (p.state !== 'denied' && p.state !== 'prompt') autoGps(); }).catch(autoGps);

@@ -75,12 +75,16 @@ async function draw(force){
         <div class="sm-big">${flaps(lv > 0 ? String(lv).padStart(2, '0') : '00', 'smart')}<span>${L('分', 'min')}</span></div>
         <p class="sm-l">${L(`${hhmm(o.leaveT)} 出門 · 約 ${hhmm(o.arriveT)} 到`, `Leave ${hhmm(o.leaveT)} · arrive ~${hhmm(o.arriveT)}`)}</p>
         <div class="legs">${legChips(o)}</div>
-        <div class="sh-btns"><button class="btn-y big" data-a="smartGo" type="button">${icon.door}<span>${L('出門倒數', 'Countdown')}</span></button>
+        <div class="sh-btns">${o.legs.length ? `<button class="btn-y big" data-a="smartGo" type="button">${icon.door}<span>${L('出門倒數', 'Countdown')}</span></button>`
+          : `<a class="btn-y big" href="${esc(walkUrl(smart.from, smart.t))}" target="_blank" rel="noopener">${icon.walk}<span>${L('行路就到：步行導航', 'Walk there: directions')}</span></a>`}
         <button class="btn-d big" data-a="smartMore" type="button">${icon.list}<span>${L('其他方案', 'Other options')}</span></button></div></div>`;
     }
   }
   await drawFavs();
 }
+// 最好方案係直接行過去：出門倒數用唔到（冇車搭），改為開手機地圖步行導航
+const IOS_UA = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const walkUrl = (a, b) => IOS_UA ? `https://maps.apple.com/?saddr=${a.lat},${a.lng}&daddr=${b.lat},${b.lng}&dirflg=w` : `https://www.google.com/maps/dir/?api=1&origin=${a.lat},${a.lng}&destination=${b.lat},${b.lng}&travelmode=walking`;
 function drawPlaces(){
   const row = (k, lab, p) => `<div class="plc-r"><span class="plc-i">${k === 'home' ? '⌂' : k === 'work' ? '▤' : '★'}</span><span class="plc-t"><b>${esc(lab)}</b><small>${p ? esc(p.label) : L('未設定', 'Not set')}</small></span>
     ${p ? `<button class="btn-d sm" data-a="go" data-k="${k}" type="button">${L('去呢度', 'Go')}</button>` : ''}<button class="btn-d sm" data-a="set" data-k="${k}" type="button">${p ? L('更改', 'Change') : L('設定', 'Set')}</button></div>`;
@@ -109,6 +113,9 @@ function doorRow(){
     ${auto && isLiftPeak() ? `<small class="door-n">${L('而家係平日朝早繁忙時間，等𨋢會計多啲。', 'It’s weekday rush hour now — lift waits are longer.')}</small>` : ''}</div>`;
 }
 function drawSettings(){
+  // 用家打緊字（例如樓層）：唔好重畫，否則每 20 秒自動更新會清走打咗一半嘅字
+  const ae = document.activeElement;
+  if (ae && ae.tagName === 'INPUT' && $('setl')?.contains(ae)) return;
   const sp = [[60, '慢', 'Slow'], [75, '正常', 'Normal'], [90, '快', 'Fast']];
   $('setl').innerHTML = `
     <div class="set-r"><span>${L('語言', 'Language')}</span><div class="seg">${[['zh', '中文'], ['en', 'English']].map(([k, t]) => `<button type="button" data-a="lang" data-v="${k}" aria-pressed="${S.set.lang === k}">${t}</button>`).join('')}</div></div>
