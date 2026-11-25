@@ -1,5 +1,5 @@
 // 港途 · 開機
-import {S, $, esc, store, L, loadDb, buildIndex, flaps, saveSettings} from './core.js';
+import {S, $, esc, store, L, loadDb, buildIndex, flaps, saveSettings, now, syncClockNow} from './core.js';
 import {go, setHere, startGps, on} from './ui.js';
 import {initNearby} from './nearby.js';
 import {initRoute} from './route.js';
@@ -33,11 +33,12 @@ function shell(){
   $('langBtn').onclick = () => { S.set.lang = S.set.lang === 'en' ? 'zh' : 'en'; saveSettings(); location.reload(); };
 }
 function tick(){
-  const hm = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Hong_Kong'});
+  const hm = new Date(now()).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Hong_Kong'});
   $('clock').innerHTML = flaps(hm);
 }
 async function boot(){
   shell(); tick(); setInterval(tick, 10000);
+  syncClockNow().then(tick);
   const ld = $('loadTxt');
   try {
     S.DB = await loadDb(n => { ld.textContent = L(`下載緊路線資料… ${(n / 1048576).toFixed(1)} MB`, `Downloading route data… ${(n / 1048576).toFixed(1)} MB`); });

@@ -1,4 +1,5 @@
 // 港途 · 共用工具、數據載入、索引
+import {mtrFare, lrtFare} from './fares.js';
 export const DATA_URL = 'https://data.hkbus.app/routeFareList.min.json';
 export const HK = {s: 22.13, n: 22.58, w: 113.82, e: 114.45};
 export const FERRY = new Set(['sunferry', 'fortuneferry', 'hkkf']);
@@ -15,12 +16,23 @@ export const store = {
 export const S = {
   DB: null, IDX: new Map(), GRID: new Map(), NUMS: new Map(),
   here: null,
-  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto'}, store.get('settings', {})),
-  online: true, lastOk: 0, skew: 0
+  set: Object.assign({lang: 'zh', walk: 75, radius: 'auto', data: 'auto', awake: 'auto'}, store.get('settings', {})),
+  online: true, lastOk: 0, skew: store.get('skew', 0)
 };
-// 用伺服器時間校正手機時鐘（手機時間唔準都唔會倒數錯）
+// 用伺服器時間校正手機時鐘（手機時間唔準都唔會倒數錯）；上次校正值會記低，開 app 第一秒已經準
 export const now = () => Date.now() + S.skew;
-export function syncClock(iso){ const t = Date.parse(iso); if (isNaN(t)) return; const sk = t - Date.now(); S.skew = Math.abs(sk) > 45000 ? sk : 0; }
+export function syncClock(iso, rtt = 0){
+  const t = typeof iso === 'number' ? iso : Date.parse(iso); if (isNaN(t)) return;
+  const sk = t + rtt / 2 - Date.now(), v = Math.abs(sk) > 30000 ? Math.round(sk) : 0;
+  if (v !== S.skew) { S.skew = v; store.set('skew', v); }
+}
+// 開機即刻用本站伺服器嘅 Date 標頭校一次（唔使等第一個到站資料）
+export async function syncClockNow(){
+  try {
+    const t0 = Date.now(), r = await fetch('./manifest.json?c=' + t0, {method: 'HEAD', cache: 'no-store'}), d = r.headers.get('date');
+    if (d) syncClock(Date.parse(d) + 500, Date.now() - t0);
+  } catch {}
+}
 export const saveSettings = () => store.set('settings', S.set);
 
 /* ---------- 語言 ---------- */
@@ -47,6 +59,12 @@ export const lineName = c => LINES[c] ? L(LINES[c][0], LINES[c][1]) : c;
 export const lineShort = c => LINES[c] ? (S.set.lang === 'en' ? c : LINES[c][0].replace(/綫$/, '')) : c;
 export const lineColor = c => LINES[c]?.[2] || '#e2231a';
 export const darkText = c => c === 'SIL' || c === 'EAL';
+// 輕鐵路線顏色（跟站牌顏色）
+const LRT_C = {'505': '#e4002b', '507': '#00a650', '610': '#8a4b1f', '614': '#00a3e0', '614P': '#f28fb0', '615': '#ffd200', '615P': '#1d3c8f',
+  '705': '#86c440', '706': '#a77bca', '751': '#f39200', '751P': '#c66a00', '761P': '#6c2c91'};
+export const lrtColor = r => LRT_C[String(r).replace('*', '')] || '#d3a809';
+const LRT_DARK = new Set(['615', '705', '614P', '614']);
+export const lrtTiles = r => { const n = String(r).replace('*', ''); return `<div class="rt ln lr${LRT_DARK.has(n) ? ' dark' : ''}${n.length >= 4 ? ' s4' : ''}" style="--c:${lrtColor(n)}">${[...n].map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`; };
 export const coTag = co => `<span class="co"><i style="--c:${coColor(co)}"></i>${esc(coName(co))}</span>`;
 
 /* ---------- 時間 ---------- */
@@ -66,13 +84,14 @@ export function flaps(text, key, cls = ''){
 }
 export const routeTiles = (route, key) => { const n = [...String(route)].length; return `<div class="rt${n >= 5 ? ' s5' : n === 4 ? ' s4' : ''}">${flaps(route, key)}</div>`; };
 // 路線字粒：港鐵用綫名、渡輪用「渡輪」，其他用路線號碼
-export const tilesFor = (r, key) => !r ? routeTiles('?') : r.co[0] === 'mtr' ? lineTiles(r.route) : FERRY.has(r.co[0]) ? routeTiles(L('渡輪', 'BOAT'), key) : routeTiles(r.route, key);
-export const routeLabel = r => !r ? '' : r.co[0] === 'mtr' ? lineName(r.route) : FERRY.has(r.co[0]) ? coName(r.co[0]) : r.route;
+export const tilesFor = (r, key) => !r ? routeTiles('?') : r.co[0] === 'mtr' ? lineTiles(r.route) : r.co[0] === 'lightRail' ? lrtTiles(r.route) : FERRY.has(r.co[0]) ? routeTiles(L('渡輪', 'BOAT'), key) : routeTiles(r.route, key);
+export const routeLabel = r => !r ? '' : r.co[0] === 'mtr' ? lineName(r.route) : r.co[0] === 'lightRail' ? L('輕鐵 ', 'LR ') + r.route.replace('*', '') : FERRY.has(r.co[0]) ? coName(r.co[0]) : r.route;
 export const lineTiles = c => `<div class="rt ln${darkText(c) ? ' dark' : ''}" style="--c:${lineColor(c)}">${[...lineShort(c)].slice(0, 3).map(x => `<span class="f">${esc(x)}</span>`).join('')}</div>`;
 
 /* ---------- 數據載入 ---------- */
 async function download(cache, onProgress){
   const res = await fetch(DATA_URL, {cache: 'no-store'});
+  const meta = {lm: res.headers.get('last-modified'), len: res.headers.get('content-length')};
   if (!res.ok) throw new Error('HTTP ' + res.status);
   let text;
   if (res.body && res.body.getReader) {
@@ -80,23 +99,40 @@ async function download(cache, onProgress){
     for (;;) { const {done, value} = await reader.read(); if (done) break; chunks.push(value); got += value.length; onProgress?.(got); }
     text = await new Blob(chunks).text();
   } else text = await res.text();
-  if (cache) { try { await cache.put(DATA_URL, new Response(text, {headers: {'Content-Type': 'application/json'}})); store.set('dbTime', Date.now()); } catch {} }
-  return JSON.parse(text);
+  const j = JSON.parse(text);
+  if (cache) { try { await cache.put(DATA_URL, new Response(text, {headers: {'Content-Type': 'application/json'}})); store.set('dbTime', Date.now()); store.set('dbMeta', meta); } catch {} }
+  return j;
+}
+// 用緊流動數據？（只有 Android Chrome 答到；iPhone 一律當唔知）
+export const onCellular = () => { const c = navigator.connection; return !!c && (c.type === 'cellular' || c.saveData === true); };
+// 背景更新：先用 HEAD 睇伺服器份資料有冇改過，有改先下載成 8 MB
+export async function refreshDb(force){
+  if (!force) {
+    if (S.set.data === 'manual') return 'skip';
+    if (S.set.data === 'wifi' && onCellular()) return 'cell';
+    if (Date.now() - store.get('dbTime', 0) < 864e5) return 'fresh';
+  }
+  const cache = await caches.open('hkgo-data-v1').catch(() => null);
+  try {
+    const h = await fetch(DATA_URL, {method: 'HEAD', cache: 'no-store'}), m = store.get('dbMeta', null);
+    if (m && m.lm && h.headers.get('last-modified') === m.lm) { store.set('dbTime', Date.now()); return 'same'; }
+  } catch {}
+  await download(cache);
+  return 'new';
 }
 export async function loadDb(onProgress){
   let cache = null, cached = null;
   try { cache = await caches.open('hkgo-data-v1'); cached = await cache.match(DATA_URL); } catch {}
-  const fresh = Date.now() - store.get('dbTime', 0) < 864e5;
   if (cached) {
     try {
       const j = await cached.clone().json();
-      if (!fresh) download(cache).catch(() => {});   // 背景更新，下次開就用新資料
+      setTimeout(() => refreshDb().catch(() => {}), 8000);   // 背景更新，下次開就用新資料
       return j;
     } catch {}
   }
   return download(cache, onProgress);
 }
-export async function clearData(){ try { await caches.delete('hkgo-data-v1'); } catch {} store.del('dbTime'); }
+export async function clearData(){ try { await caches.delete('hkgo-data-v1'); } catch {} store.del('dbTime'); store.del('dbMeta'); }
 
 const cell = (lat, lng) => Math.floor(lat / 0.002) + ':' + Math.floor(lng / 0.002);
 export function buildIndex(){
@@ -250,6 +286,14 @@ export function nextDepAfter(r, co, seq, t){
 }
 export const isMtrStation = id => (S.IDX.get(id) || []).some(e => e.co === 'mtr');
 export const fareAt = (r, seq) => { const f = r.fares?.[seq]; return f != null && f !== '' ? +f : null; };
+// 一程車嘅八達通成人車費：港鐵、輕鐵按上落車站計，巴士小巴按上車站分段收費
+export function legFare(r, co, bseq, aseq){
+  const st = r.stops[co] || [];
+  if (co === 'mtr') return aseq == null ? null : mtrFare(st[bseq], st[aseq]);
+  if (co === 'lightRail') return aseq == null ? null : lrtFare(st[bseq], st[aseq]);
+  return fareAt(r, bseq);
+}
+export {mtrFare, lrtFare};
 export const money = v => v == null ? '' : '$' + (Math.round(v * 10) / 10).toFixed(1);
 
 /* ---------- 雜項 ---------- */
@@ -291,5 +335,8 @@ export const icon = {
   pin: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-7.2 7-12.5A7 7 0 0 0 5 9.5C5 14.8 12 22 12 22z" fill="currentColor"/><circle cx="12" cy="9.5" r="2.6" fill="#111"/></svg>',
   gps: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.4" fill="none"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2.4"/></svg>',
   swap: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16m0 0-4-4m4 4 4-4M17 20V4m0 0-4 4m4-4 4 4" stroke="currentColor" stroke-width="2.2" fill="none"/></svg>',
+  sun: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="currentColor"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2"/></svg>',
+  moon: '<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
+  bell: '<svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>',
   search: '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6.5" stroke="currentColor" stroke-width="2.4" fill="none"/><path d="m15 15 6 6" stroke="currentColor" stroke-width="2.4"/></svg>'
 };

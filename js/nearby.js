@@ -1,6 +1,6 @@
 // 港途 · 附近車站
-import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
-  stopLoc, stopName, bearing, compass, icon, FERRY, toast} from './core.js';
+import {S, $, esc, store, L, nm, dist, stopsWithin, walkMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, tilesFor, routeLabel, lineName, lineColor, coTag, coName,
+  stopLoc, stopName, bearing, compass, icon, FERRY, toast, now, nextDepAfter} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {on, setHere, startGps, stopGps, gpsOn, attachPicker, starBtn, toggleFav, isFav, openSheet, closeSheet} from './ui.js';
 import {makeMap, pin, youIcon} from './map.js';
@@ -18,17 +18,15 @@ export function initNearby(){
   <section class="where"><div class="wrap">
     <div class="loc">
       <div class="loc-txt"><div class="lbl">${L('你而家喺', 'You are at')}</div><p class="loc-name" id="locName">${L('未定位', 'No location')}</p><p class="loc-sub" id="locSub">${L('撳「定位」用你嘅位置，或者揀一個地點', 'Tap Locate, or pick a place')}</p></div>
-      <button class="btn-y" id="gpsBtn" type="button">${icon.gps}<span>${L('定位', 'Locate')}</span></button>
+      <button class="btn-y" id="gpsBtn" type="button" aria-label="${L('定位', 'Locate')}">${icon.gps}<span>${L('定位', 'Locate')}</span></button>
     </div>
-    <div class="search">${icon.search}<input id="nq" type="search" placeholder="${L('搜尋車站或地方，例如：理工大學', 'Search a stop or place')}" autocomplete="off" enterkeyhint="search" aria-label="${L('搜尋', 'Search')}"><div class="results" id="nres" role="listbox"></div></div>
-    <div class="chips" id="chips"></div>
-    <div class="ctrl-row">
-      <span class="lbl" aria-hidden="true">${L('米', 'm')}</span>
-      <div class="seg" id="seg" role="group" aria-label="${L('範圍（米）', 'Radius (m)')}"></div>
+    <div class="srow">
+      <div class="search">${icon.search}<input id="nq" type="search" placeholder="${L('搜尋車站或地方', 'Search a stop or place')}" autocomplete="off" enterkeyhint="search" aria-label="${L('搜尋車站或地方，例如：理工大學', 'Search a stop or place')}"><div class="results" id="nres" role="listbox"></div></div>
       <div class="seg icons" id="modeSeg" role="group" aria-label="${L('顯示方式', 'View')}">
         <button type="button" data-m="list" aria-label="${L('列表', 'List')}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13" stroke="currentColor" stroke-width="2.4"/><circle cx="4" cy="6" r="1.7" fill="currentColor"/><circle cx="4" cy="12" r="1.7" fill="currentColor"/><circle cx="4" cy="18" r="1.7" fill="currentColor"/></svg></button><button type="button" data-m="map" aria-label="${L('地圖', 'Map')}"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z M9 3v15 M15 6v15" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg></button>
       </div>
     </div>
+    <div class="chips" id="chips"></div>
   </div></section>
   <div class="wrap"><div id="nstatus"></div><div id="nmap" class="bigmap" hidden></div><div id="board" class="board"></div></div>`;
 
@@ -36,8 +34,13 @@ export function initNearby(){
   attachPicker($('nq'), $('nres'), p => { stopGps(); setHere({...p, mode: 'manual'}); }, {places: true, saved: true});
   $('chips').innerHTML = PRESETS.filter(([c]) => S.DB.stopList[c]).map(([c, zh, en]) => `<button class="chip" type="button" data-c="${c}">${L(zh, en)}</button>`).join('');
   $('chips').onclick = e => { const b = e.target.closest('[data-c]'); if (!b) return; const s = stopLoc(b.dataset.c); stopGps(); setHere({lat: s.lat, lng: s.lng, label: b.textContent + L('站', ' Stn'), mode: 'manual'}); };
-  $('seg').innerHTML = RADII.map(r => `<button type="button" data-r="${r}" aria-label="${r === 'auto' ? L('自動範圍', 'Auto radius') : r + L(' 米', ' m')}">${r === 'auto' ? L('自動', 'Auto') : r}</button>`).join('');
-  $('seg').onclick = e => { const b = e.target.closest('[data-r]'); if (!b) return; S.set.radius = b.dataset.r === 'auto' ? 'auto' : +b.dataset.r; store.set('settings', S.set); paintCtrl(); makeGroups(); };
+  // 範圍揀選放咗入狀態列（省位）；用事件委派，因為狀態列會重畫
+  $('nstatus').addEventListener('change', e => { if (e.target.id !== 'rad') return; S.set.radius = e.target.value === 'auto' ? 'auto' : +e.target.value; store.set('settings', S.set); makeGroups(); });
+  $('nstatus').addEventListener('click', e => {
+    const b = e.target.closest('[data-fix]'); if (!b) return;
+    if (b.dataset.fix === 'map') { mode = 'map'; store.set('nearMode', mode); paintCtrl(); render(); toast(L('喺地圖撳一下你所在嘅位置', 'Tap where you are on the map')); }
+    else { $('nq').focus(); }
+  });
   $('modeSeg').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; mode = b.dataset.m; store.set('nearMode', mode); paintCtrl(); render(); };
   $('board').addEventListener('click', e => { if (e.target.closest('#moreStops')) { maxGroups += 14; makeGroups(); return; } onBoardClick(e); });
   $('board').addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-row]')) { e.preventDefault(); onBoardClick(e); } });
@@ -60,14 +63,15 @@ export function initNearby(){
 }
 
 function paintCtrl(){
-  for (const b of $('seg').children) b.setAttribute('aria-pressed', String(String(S.set.radius) === b.dataset.r));
   for (const b of $('modeSeg').children) b.setAttribute('aria-pressed', String(mode === b.dataset.m));
 }
 function paintLoc(){
   const h = S.here;
+  $('chips').hidden = !!h;                       // 定咗位就收埋預設地點，畫面騰出位畀到站板
+  $('v-near').classList.toggle('located', !!h);
   if (!h) return;
   $('locName').textContent = h.label;
-  $('locSub').textContent = h.mode === 'gps' ? L(`你嘅位置 · 誤差約 ±${Math.round(h.acc || 0)} 米`, `GPS · ±${Math.round(h.acc || 0)} m`) : L('手動揀選 · 撳「定位」改用你嘅位置', 'Picked manually · tap Locate for GPS');
+  $('locSub').textContent = h.mode === 'gps' ? L(`GPS 定位 · 誤差約 ±${Math.round(h.acc || 0)} 米`, `GPS · ±${Math.round(h.acc || 0)} m`) : L('手動揀選 · 撳「定位」改用你嘅位置', 'Picked manually · tap Locate for GPS');
   for (const b of $('chips').children) b.setAttribute('aria-pressed', String(h.mode === 'manual' && h.label === b.textContent + L('站', ' Stn')));
 }
 
@@ -134,6 +138,12 @@ async function loadGroup(g, memo){
     row.stale = false; row.err = !ok.length;
     row.etas = ok.flatMap(x => x.list).sort((a, b) => a.t - b.t).filter((e, i, a) => !i || e.t - a[i - 1].t > 45000);
     row.note = ok.map(x => x.note).find(Boolean) || '';
+    // 冇實時班次（例如半夜）：按時間表講下一班幾點，清楚標明係時間表
+    if (!row.etas.length && ok.length) {
+      const r = S.DB.routeList[row.key], s0 = row.srcs[0], t = nextDepAfter(r, s0.co, s0.seq, now());
+      if (t && t - now() < 90 * 60000) row.etas = [{t, sched: true, tt: true}];
+      else if (t && t - now() < 16 * 3600e3) row.note = L(`下一班 ${hhmm(t)}（時間表）`, `Next ${hhmm(t)} (timetable)`);
+    }
   }));
   const dyn = [];
   for (const id of g.stops) {
@@ -165,7 +175,8 @@ function etaCell(row, key){
     : `<div class="big${sch}">${flaps(String(m).padStart(2, '0'), key)}<span class="u">${L('分', 'min')}</span></div>`;
   const nx = list.slice(1, 3);
   let small = '';
-  if (list[0].sched) small = L('時間表班次', 'Scheduled');
+  if (list[0].tt) small = L('按時間表估計', 'Timetable estimate');
+  else if (list[0].sched) small = L('時間表班次', 'Scheduled');
   else if (m >= 60) small = L('下一班', 'Next');
   else if (nx.length) small = L('之後 ', 'then ') + nx.map(e => mins(e.t) >= 60 ? hhmm(e.t) : mins(e.t) <= 0 ? L('即將', 'now') : mins(e.t)).join(' · ') + (mins(nx[nx.length - 1].t) < 60 ? L(' 分', ' min') : '');
   return big + (small ? `<small>${esc(small)}</small>` : '');
@@ -186,7 +197,7 @@ function rowHtml(g, row){
     sub = `<span class="co"><i style="--c:${lineColor(row.line)}"></i>${esc(lineName(row.line))}</span>${row.plat ? ' · ' + L(`${esc(row.plat)} 號月台`, `Platform ${esc(row.plat)}`) : ''}`;
     fid = row.key; label = lineName(row.line);
   } else if (row.kind === 'lrt') {
-    rt = routeTiles(row.route || L('輕鐵', 'LR'), 'r' + g.name.zh + row.key);
+    rt = row.route ? lrtTiles(row.route) : routeTiles(L('輕鐵', 'LR'), 'r' + g.name.zh + row.key);
     sub = coTag('lightRail') + (row.plat ? ' · ' + L(`${esc(row.plat)} 號月台`, `Platform ${esc(row.plat)}`) : '');
     fid = row.key; label = row.route;
   } else {
@@ -231,10 +242,12 @@ export function render(){
   const open = new Set([...bd.querySelectorAll('details[open]')].map(d => d.closest('[aria-label]')?.getAttribute('aria-label') + (d.classList.contains('compact') ? '#c' : '')));
   rowsById = new Map();
   const n = groups.length;
-  let h = `<div class="status"><b>${n ? L(`${effR} 米內有 ${n} 個車站`, `${n} stops within ${effR} m`) : L(`${effR} 米內搵唔到車站`, `No stops within ${effR} m`)}</b><span>${lastFetch ? (S.online ? L('更新於 ', 'Updated ') + hhmm(lastFetch) + ' · ' + L('每 30 秒自動更新', 'auto every 30 s') : L('離線 · 顯示 ', 'Offline · showing ') + (S.lastOk ? hhmm(S.lastOk) : '') + L(' 嘅資料', ' data')) : ''}</span></div>`;
-  if (note) h += `<p class="notice">${esc(note)}</p>`;
-  if (S.here.mode === 'gps' && S.here.acc > 50) h += `<p class="notice">${L(`GPS 誤差約 ±${Math.round(S.here.acc)} 米，附近車站可能唔準。`, `GPS accuracy ±${Math.round(S.here.acc)} m — nearby stops may be off.`)}</p>`;
-  st.innerHTML = h;
+  const radSel = `<label class="rad"><span class="sr">${L('範圍', 'Radius')}</span><select id="rad">${RADII.map(r => `<option value="${r}"${String(S.set.radius) === String(r) ? ' selected' : ''}>${r === 'auto' ? L('自動範圍', 'Auto') : r + L(' 米', ' m')}</option>`).join('')}</select></label>`;
+  let h = `<div class="status"><div class="st-l"><b>${n ? L(`${effR} 米內 ${n} 個站`, `${n} stops · ${effR} m`) : L(`${effR} 米內冇車站`, `No stops within ${effR} m`)}</b><span>${lastFetch ? (S.online ? L('更新 ', 'Updated ') + hhmm(lastFetch) + L(' · 每 30 秒', ' · every 30 s') : L('離線 · 顯示 ', 'Offline · ') + (S.lastOk ? hhmm(S.lastOk) : '') + L(' 嘅資料', ' data')) : ''}</span></div>${radSel}</div>`;
+  if (note) h = h.replace('<span>', `<span class="wide">${esc(note)}</span><span>`);
+  if (S.here.mode === 'gps' && S.here.acc > 50) h += `<div class="notice gpsn"><p>${L(`定位誤差 ±${Math.round(S.here.acc)} 米，車站可能唔準`, `Accuracy ±${Math.round(S.here.acc)} m — stops may be off`)}</p><div><button class="btn-d sm" data-fix="map" type="button">${L('地圖揀位置', 'Pick on map')}</button><button class="btn-d sm" data-fix="search" type="button">${L('搜尋', 'Search')}</button></div></div>`;
+  if (groups.some(g => [...g.rows.values()].some(r => live(r)[0]?.sched))) h += `<p class="legend"><span class="lg-s">05</span>${L('灰色數字 = 時間表班次，唔係實時位置', 'Grey digits = timetable, not live')}</p>`;
+  if (document.activeElement?.id !== 'rad') st.innerHTML = h;     // 用家揀緊範圍就唔好重畫
   $('nmap').hidden = mode !== 'map';
   if (mode === 'map') drawMap();
   bd.innerHTML = n ? groups.map(groupHtml).join('') + (hiddenN ? `<button class="btn-d big" id="moreStops" type="button">${L(`仲有 ${hiddenN} 個車站，顯示更多`, `${hiddenN} more stops — show more`)}</button>` : '') : `<div class="hero"><h1>${L('附近冇車站', 'No stops nearby')}</h1><p>${L('試下揀大啲嘅範圍，或者搜尋另一個地方。', 'Try a larger radius or another place.')}</p></div>`;
@@ -253,6 +266,16 @@ async function drawMap(){
     map.eachLayer(l => { if (l._hk) map.removeLayer(l); });
     const add = l => { l._hk = 1; l.addTo(map); return l; };
     add(Lf.circle([S.here.lat, S.here.lng], {radius: effR, color: '#ffc917', weight: 1.5, fillOpacity: .06}));
+    if (S.here.mode === 'gps' && S.here.acc > 15) add(Lf.circle([S.here.lat, S.here.lng], {radius: S.here.acc, color: '#3aa0ff', weight: 1, dashArray: '4 4', fillOpacity: .05, interactive: false}));
+    if (!map._tapSet) {
+      map._tapSet = true;
+      // 撳地圖：彈出「設為我嘅位置」，唔會一撳就改，免得拖地圖時誤觸
+      map.on('click', ev => {
+        const pp = Lf.popup({closeButton: false, className: 'setpop'}).setLatLng(ev.latlng)
+          .setContent(`<button type="button" class="btn-y sm">${L('設為我嘅位置', 'I’m here')}</button>`).openOn(map);
+        pp.getElement()?.querySelector('button')?.addEventListener('click', () => { map.closePopup(); stopGps(); setHere({lat: ev.latlng.lat, lng: ev.latlng.lng, label: L('地圖上揀嘅位置', 'Point on map'), mode: 'manual'}); });
+      });
+    }
     add(Lf.marker([S.here.lat, S.here.lng], {icon: youIcon(), interactive: false}));
     groups.forEach((g, i) => add(Lf.marker([g.loc.lat, g.loc.lng], {icon: pin(String(i + 1), g.rail ? 'rail' : '')}).on('click', () => {
       mode = 'list'; store.set('nearMode', mode); paintCtrl(); render();

@@ -1,16 +1,20 @@
 // 港途 · 出門倒數模式（由出門、等車、搭車到落車提示）
 import {S, $, esc, store, L, nm, hhmm, mins, now, flaps, tilesFor, routeLabel, routeTiles, lineTiles, lineName, stopName, stopLoc, dist, rideMin, avgWait,
-  speak, notify, toast, icon} from './core.js';
+  speak, notify, toast, icon, saveSettings} from './core.js';
 import {cycle, etaFor} from './eta.js';
 import {openSheet, closeSheet, addLayer, back} from './ui.js';
 import {planTrip, toTrip, legChips} from './plan.js';
 
-let layer = false, trip = null, lists = [], tick = null, poll = null, wake = null, gpsW = null, pos = null, lastSay = '', shown = false, lastSig = '';
+let layer = false, trip = null, lists = [], tick = null, poll = null, wake = null, gpsW = null, pos = null, lastSay = '', shown = false, lastSig = '', lowBatt = false, wantWake = false;
+// iPhone：網頁 app 鎖咗機或者轉咗去第二個 app 就唔會再跑，提示會遲到
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+navigator.getBattery?.().then(b => { const f = () => { lowBatt = b.level < 0.2 && !b.charging; }; f(); b.addEventListener('levelchange', f); b.addEventListener('chargingchange', f); }).catch(() => {});
 
 export function initTrip(){
   const saved = store.get('trip', null);
   if (saved && now() - saved.startedAt < 3 * 3600e3 && saved.stage !== 'done') { trip = saved; start(false); }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && trip) { if (shown) lockScreen(); load(); paint(true); } });
+  // 返嚟 app：即刻重新計，錯過咗嘅提示會即時補發（paint 會檢查邊個提示未響過）
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && trip) { wake = null; load(); paint(true); } });
 }
 export function startTrip(t){
   if (!t.legs?.length) return;
@@ -36,10 +40,21 @@ function stop(){
   document.body.classList.remove('tripping');
 }
 // 倒數畫面加入返回鍵記錄：Android 撳返回會收細倒數，唔會關咗後面嘅頁或者離開 app
-function open(){ if (!layer) { layer = true; addLayer(() => { layer = false; pill(); }); } lastSig = ''; shown = true; $('trip').hidden = false; $('tripPill').hidden = true; document.body.classList.add('tripping'); lockScreen(); paint(true); }
+function open(){ if (!layer) { layer = true; addLayer(() => { layer = false; pill(); }); } lastSig = ''; shown = true; $('trip').hidden = false; $('tripPill').hidden = true; document.body.classList.add('tripping'); paint(true); }
 function pill(){ if (!trip) return; shown = false; $('trip').hidden = true; document.body.classList.remove('tripping'); release(); $('tripPill').hidden = false; paint(); }
 
-async function lockScreen(){ try { if ('wakeLock' in navigator && !wake) { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch {} }
+let waking = false;
+async function lockScreen(){
+  if (waking || wake || document.hidden || !('wakeLock' in navigator)) return;
+  waking = true;
+  try { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } catch {} finally { waking = false; }
+}
+// 螢幕常亮：等車、搭車先開；出門前仲有 10 分鐘以上唔開；低電量（<20%）自動唔開；用家可以喺倒數畫面關
+function wakeFor(stage, rem){
+  const want = shown && S.set.awake !== 'off' && !lowBatt && (stage === 'go' || stage === 'ride' || (stage === 'prep' && rem < 600000));
+  wantWake = want;
+  if (want) lockScreen(); else if (wake) release();
+}
 function release(){ try { wake?.release(); } catch {} wake = null; }
 function watchGps(){
   if (gpsW != null || !('geolocation' in navigator)) return;
@@ -161,6 +176,8 @@ function paint(force){
     say = L('到咗目的地', 'You have arrived');
   }
   lastSay = say;
+  wakeFor(trip.stage, trip.stage === 'prep' ? cur.boardT - walkOf(0) * 60000 - T0 : 0);
+  if (shown && IOS && (trip.stage === 'go' || trip.stage === 'ride') && !note) note = L('保持呢個畫面開住，先收到提示', 'Keep this screen open for alerts');
   const pl = $('tripPill');
   if (!shown) {
     if (!pl.hidden) pl.innerHTML = `<span class="tp-t">${flaps(big.length > 8 ? '--:--' : big)}</span><span class="tp-l">${esc(label.replace(/<[^>]+>/g, ''))}<small>${esc(rname(l))}</small></span>`;
@@ -168,13 +185,14 @@ function paint(force){
   }
   const prog = progress(c);
   const srText = `${label.replace(/<[^>]+>/g, '')} ${Math.max(0, Math.round(((trip.stage === 'prep' ? c.legs[i].boardT - walkOf(0) * 60000 : trip.stage === 'go' ? c.legs[i].boardT : (c.legs[i]?.alightT || T0)) - T0) / 60000))} ${L('分鐘', 'min')}`;
-  const sig = [label, lines.join('|').replace(/<b class="dyn-m">\d+<\/b>/g, ''), btns.map(b => b[0]).join(','), alert, note, prog].join('§');
+  const sig = [label, lines.join('|').replace(/<b class="dyn-m">\d+<\/b>/g, ''), btns.map(b => b[0]).join(','), alert, note, prog, wantWake, lowBatt, S.set.awake].join('§');
   const box = $('trip');
   // 只喺內容真係變咗先成塊重畫；平時每秒淨係換倒數數字，掣唔會被重建（唔會食咗撳掣，讀屏焦點唔會走）
   if (force || sig !== lastSig || !box.querySelector('.trip-big')) {
     lastSig = sig;
     box.innerHTML = `<div class="trip-in">
     <header class="trip-h"><span class="trip-sign">→ ${L('出門倒數', 'LEAVE BOARD')}</span>
+      <button class="icon-btn" data-a="awake" type="button" aria-pressed="${S.set.awake !== 'off'}" aria-label="${S.set.awake !== 'off' ? L('螢幕常亮：開（撳一下關）', 'Keep awake: on') : L('螢幕常亮：關（撳一下開）', 'Keep awake: off')}">${S.set.awake !== 'off' ? icon.sun : icon.moon}</button>
       <button class="icon-btn" data-a="say" type="button" aria-label="${L('讀出', 'Read aloud')}">${icon.speak}</button>
       <button class="icon-btn" data-a="min" type="button" aria-label="${L('收細', 'Minimise')}">${icon.back}</button></header>
     <div class="trip-main">
@@ -184,7 +202,9 @@ function paint(force){
       <p class="sr" aria-live="polite">${esc(srText)}</p>
       <div class="trip-lines">${lines.filter(Boolean).map(x => `<p>${x}</p>`).join('')}</div>
       <div class="trip-btns">${btns.map(([a, k, ic, t]) => `<button class="tb ${k}" data-a="${a}" type="button">${ic}<span>${t}</span></button>`).join('')}</div>
-      ${note ? `<p class="trip-note">${esc(note)}</p>` : ''}
+      ${note ? `<p class="trip-note">${esc(note)}${IOS ? L('。iPhone 鎖咗機就唔會響。', '. iPhone won’t alert while locked.') : ''}</p>` : ''}
+      ${trip.stage !== 'done' ? `<button class="trip-cal" data-a="cal" type="button">${icon.bell}<span>${IOS ? L('加入行事曆提醒（鎖機都會響）', 'Add calendar alarms (work when locked)') : L('加入行事曆提醒', 'Add calendar alarms')}</span></button>` : ''}
+      ${wantWake ? `<p class="trip-note dim">${L('螢幕會保持常亮', 'Screen stays on')}${lowBatt ? '' : ''}</p>` : lowBatt && S.set.awake !== 'off' ? `<p class="trip-note dim">${L('電量低過 20%，已停用螢幕常亮', 'Battery below 20% — keep-awake paused')}</p>` : ''}
     </div>
     <div class="trip-prog" aria-label="${L('行程', 'Journey')}">${prog}</div></div>`;
   } else {
@@ -213,6 +233,8 @@ document.addEventListener('click', e => {
   const a = b.dataset.a;
   if (a === 'min') { if (layer) back(); else pill(); }
   else if (a === 'say') speak(lastSay);
+  else if (a === 'awake') { S.set.awake = S.set.awake === 'off' ? 'auto' : 'off'; saveSettings(); toast(S.set.awake === 'off' ? L('已關閉螢幕常亮', 'Keep-awake off') : L('已開啟螢幕常亮', 'Keep-awake on')); paint(true); }
+  else if (a === 'cal') calendar();
   else if (a === 'cancel') { stop(); toast(L('已取消', 'Cancelled')); }
   else if (a === 'finish') stop();
   else if (a === 'left') { trip.stage = 'go'; trip.leftAt = now(); trip.pick[0] = chain().legs[0].boardT; save(); watchGps(); paint(); }
@@ -244,4 +266,25 @@ function other(){
       box.onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; const o = opts[+b.dataset.k]; closeSheet(); startTrip({...toTrip(o, trip.alts.from, trip.alts.to), alts: trip.alts}); };
     });
   });
+}
+
+/* ---------- 行事曆提醒：iPhone 鎖咗機網頁 app 唔會響，行事曆鬧鐘一定會響 ---------- */
+function calendar(){
+  const c = chain(), stamp = t => new Date(t).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const ev = [], uid = Date.now();
+  const add = (k, start, end, title, desc) => ev.push(['BEGIN:VEVENT', `UID:hkgo-${uid}-${k}@hkgo`, `DTSTAMP:${stamp(Date.now())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(Math.max(end, start + 60000))}`,
+    `SUMMARY:${title.replace(/[,;\n]/g, ' ')}`, `DESCRIPTION:${desc.replace(/[,;\n]/g, ' ')}`, 'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${title.replace(/[,;\n]/g, ' ')}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT'].join('\r\n'));
+  const i0 = trip.li;
+  if (trip.stage === 'prep') { const l = trip.legs[0], lv = c.legs[0].boardT - walkOf(0) * 60000; add('leave', lv, c.legs[0].boardT, L(`港途：出門搭 ${rname(l)}`, `HK GO: leave for ${rname(l)}`), L(`${hhmm(lv)} 出門 · 行去 ${stopName(l.board)} · ${hhmm(c.legs[0].boardT)} 班車`, `Leave ${hhmm(lv)} for ${stopName(l.board)}`)); }
+  trip.legs.forEach((l, k) => {
+    if (k < i0 || !c.legs[k] || l.aseq == null) return;
+    const a = c.legs[k].alightT, nx = trip.legs[k + 1];
+    add('off' + k, a - 3 * 60000, a, L(`港途：準備喺 ${stopName(l.alight)} 落車`, `HK GO: get off at ${stopName(l.alight)}`), nx ? L(`落車後轉 ${rname(nx)}`, `Then change to ${rname(nx)}`) : L('就快到目的地', 'Almost there'));
+  });
+  if (!ev.length) { toast(L('揀咗落車站先可以加提醒', 'Pick an alight stop first')); return; }
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//HKGO//Trip//ZH', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], {type: 'text/calendar;charset=utf-8'}));
+  const a = document.createElement('a'); a.href = url; a.download = 'hkgo-trip.ics'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast(L('打開檔案就可以加入行事曆；時間有變要再加過', 'Open the file to add it; re-add if times change'), 5000);
 }
