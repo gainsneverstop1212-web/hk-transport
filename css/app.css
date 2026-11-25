@@ -594,3 +594,10 @@ body.paged .trip-pill{top:auto;bottom:calc(84px + var(--sb));right:12px}
 /* 大字模式：用 zoom 成個介面一齊放大，排版比例唔變 */
 body{zoom:var(--zoom,1)}
 .bigmap,.rmap,.pmap{zoom:calc(1 / var(--zoom,1))}
+/* 大字模式：到站行改做兩行（路線號碼 + 到站時間一行，目的地另一行），唔會擠到一行得兩個字 */
+body.bigtext .cols{display:none}
+body.bigtext .row{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"rt eta star" "dst dst dst";row-gap:6px}
+body.bigtext .row>.rt{grid-area:rt}
+body.bigtext .row>.dst{grid-area:dst}
+body.bigtext .row>.eta{grid-area:eta}
+body.bigtext .row>.star{grid-area:star}

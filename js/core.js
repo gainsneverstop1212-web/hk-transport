@@ -38,7 +38,7 @@ export async function syncClockNow(){
 }
 export const saveSettings = () => store.set('settings', S.set);
 // 大字模式：成個介面按比例放大（長者、視力弱嘅用家）
-export const TEXT_ZOOM = {normal: 1, large: 1.15, xl: 1.3};
+export const TEXT_ZOOM = {normal: 1, large: 1.12, xl: 1.25};
 export const applyTextSize = () => { document.documentElement.style.setProperty('--zoom', TEXT_ZOOM[S.set.text] || 1); document.body.classList.toggle('bigtext', S.set.text !== 'normal'); };
 
 /* ---------- 語言 ---------- */

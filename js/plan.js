@@ -349,7 +349,7 @@ export function initPlan(){
   if ((!from || from.here) && S.here) from = toPoint(S.here, true);
   fi.value = labelOf(from); ti.value = labelOf(to);
   // 重新開 app／轉語言：記得起點終點就即刻計，唔會淨係得兩個格、下面一片空白
-  if (from && to) setTimeout(() => run(), 0);
+  if (from && to) setTimeout(() => run(false, true), 0);
   // 「而家出發」嘅結果每分鐘用最新實時到站重新計；過咗出門時間嘅方案會自動換走
   setInterval(() => { if (!$('v-plan').hidden && results && !document.hidden) { if (mode === 'now' && Date.now() - lastRun > 60000) run(true); else drawRes(); } }, 20000);
 }
@@ -367,7 +367,7 @@ function progressUI(n){
   el.innerHTML = STEPS.map(([zh, en], i) => `<li class="${i + 1 < n ? 'done' : i + 1 === n ? 'now' : ''}"><span>${i + 1 < n ? '✓' : i + 1}</span>${L(zh, en)}</li>`).join('');
 }
 const setRes = html => { const el = $('pRes'); el._html = html; el.innerHTML = html; };
-async function run(silent){
+async function run(silent, auto){
   if (!from || !to) return;
   // 揀咗嘅時間已經過咗（例如頁面開咗好耐）：改返而家出發
   if (at && at < now() - 60000) { at = null; mode = 'now'; paintCtlRef(); if (!silent) toast(L('揀咗嘅時間已經過咗，改為而家出發', 'Chosen time has passed — showing Leave now')); }
@@ -394,7 +394,7 @@ async function run(silent){
   failed = false;
   if (silent && results && results[open]) { const sig = legsSig(results[open]); const k = res.findIndex(o => legsSig(o) === sig); open = k; }
   results = res;
-  if (!silent) countDest(to);
+  if (!silent && !auto) countDest(to);              // 自動重算（重開 app）唔計入「常去」次數
   drawRes();
 }
 const legsSig = o => o.legs.map(l => l.key + l.board).join('>');
