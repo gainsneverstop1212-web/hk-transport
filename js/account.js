@@ -5,7 +5,7 @@
 // · 隨時可以登出（部機資料保留）或者刪除帳戶（雲端資料即刻刪除）
 import {S, $, esc, store, L, toast, hhmm} from './core.js';
 import {emit} from './ui.js';
-import {FIREBASE_CONFIG} from './account-config.js';
+import {FIREBASE_CONFIG, PROVIDERS} from './account-config.js';
 
 // 會同步嘅資料（唔包括你最後所在位置、進行中嘅行程、快取）
 export const SYNC_KEYS = ['settings', 'places', 'favs2', 'habitLog', 'tripBuf', 'recentRoutes', 'planRecent', 'destCount', 'destNo', 'nearMode', 'planSort'];
@@ -140,8 +140,8 @@ export function accountHtml(){
   if (!enabled()) return '';
   if (!user) return `<div class="acct">
     <div class="acct-t"><b>${L('登入帳戶', 'Sign in')}</b><small>${L('換手機、用平板都記住你嘅常用地點、樓層、常用路線同設定。唔登入都照用得。', 'Keep your places, floors, pinned routes and settings across devices. Optional.')}</small></div>
-    <button class="acct-b apple" type="button" data-acct="apple">${APPLE}<span>${L('用 Apple 登入', 'Sign in with Apple')}</span></button>
-    <button class="acct-b google" type="button" data-acct="google">${GOOGLE}<span>${L('用 Google 登入', 'Sign in with Google')}</span></button>
+    ${PROVIDERS?.apple !== false ? `<button class="acct-b apple" type="button" data-acct="apple">${APPLE}<span>${L('用 Apple 登入', 'Sign in with Apple')}</span></button>` : ''}
+    ${PROVIDERS?.google !== false ? `<button class="acct-b google" type="button" data-acct="google">${GOOGLE}<span>${L('用 Google 登入', 'Sign in with Google')}</span></button>` : ''}
     <small class="acct-p">${L('只會儲存你喺 app 入面嘅設定；只有你登入先睇到，隨時可以刪除。', 'Only your in-app settings are stored, visible only to you, deletable any time.')}</small></div>`;
   const name = user.displayName || user.email || L('已登入', 'Signed in');
   return `<div class="acct in">
