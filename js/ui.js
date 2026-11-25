@@ -217,7 +217,11 @@ function timed(url, opt = {}, ms = 6000){
   return fetch(url, {...opt, signal: ctl.signal}).finally(() => clearTimeout(t));
 }
 async function alsSearch(q){
-  const r = await timed('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=10', {headers: {Accept: 'application/json'}}, 10000);
+  // 地址庫只會用 Accept-Language 嘅語言回覆：手機設定咗英文就只得英文地址，中文搜尋會全部對唔上
+  // 所以一律按 app 嘅語言要求（中文版要中文地址），唔跟手機語言
+  // 地址庫會快取 15 分鐘但唔分語言：網址加埋語言（&hl=），唔會攞返之前用英文快取咗嘅結果
+  const hl = S.set.lang === 'en' ? 'en' : 'zh';
+  const r = await timed('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=10&hl=' + hl, {headers: {Accept: 'application/json', 'Accept-Language': hl === 'en' ? 'en' : 'zh-HK'}}, 10000);
   if (!r.ok) throw new Error(String(r.status));
   const j = await r.json(), out = [];
   for (const s of j.SuggestedAddress || []) {
@@ -237,8 +241,10 @@ async function alsSearch(q){
     const en = estEn && bldEn ? `${bldEn}, ${estEn}` : estEn || bldEn || [noEn, se.StreetName].filter(Boolean).join(' ');
     const sub = [st.StreetName && st.StreetName + (no ? no + '號' : ''), c.ChiDistrict?.DcDistrict].filter(Boolean).join(' · ');
     const subEn = [[noEn, se.StreetName].filter(Boolean).join(' '), e.EngDistrict?.DcDistrict].filter(Boolean).join(', ');
-    if (!g.Latitude || !zh) continue;
-    out.push({kind: 'place', src: 'als', name: {zh, en: en || zh}, sub: {zh: sub, en: subEn}, lat: +g.Latitude, lng: +g.Longitude, no: st.BuildingNoFrom, noTo: st.BuildingNoTo});
+    const zhName = zh || en, enName = en || zh;
+    if (!g.Latitude || !zhName) continue;
+    // langOnly：地址庫只回覆咗另一種語言（瀏覽器唔准改語言時）→ 按地址庫自己嘅排名，唔用名對字
+    out.push({kind: 'place', src: 'als', rank: out.length, langOnly: !zh || !en, name: {zh: zhName, en: enName}, sub: {zh: sub || subEn, en: subEn || sub}, lat: +g.Latitude, lng: +g.Longitude, no: st.BuildingNoFrom || se.BuildingNoFrom, noTo: st.BuildingNoTo || se.BuildingNoTo});
   }
   return out;
 }
@@ -283,7 +289,12 @@ const normAddr = q => q.replace(/([村圍])([一二三四五六七八九十]+區
 // 合併、排次序（每個來源返嚟就可以即刻用，唔使等齊兩個）
 function rankPlaces(q, osm, als){
   const addrLike = /\d|號|街|道|路|里|徑/.test(q);
-  const raw = [...osm, ...als].map(x => ({...x, ms: matchScore(x, q) + (x.road ? 1.5 : 0) + (x.src === (addrLike ? 'osm' : 'als') ? 0.3 : 0)}));
+  const raw = [...osm, ...als].map(x => {
+    let ms = matchScore(x, q) + (x.road ? 1.5 : 0) + (x.src === (addrLike ? 'osm' : 'als') ? 0.3 : 0);
+    const crossLang = x.langOnly && /[^\x00-\x7f]/.test(q) !== /[^\x00-\x7f]/.test(x.name.zh);
+    if (crossLang) ms = Math.min(ms, 3 + x.rank * 0.2);       // 中文搜尋得英文結果（或者相反）：信地址庫排名
+    return {...x, ms};
+  });
   // 有門牌號碼：號碼完全一樣排先，號碼唔同嘅標明「最接近」
   const nq = norm(q), m = /(\d+[a-z]?|[a-z])(號|座|期|樓)?$/.exec(nq);
   if (m && /\d|座|期|樓/.test(m[0])) {
