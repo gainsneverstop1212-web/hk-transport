@@ -28,6 +28,7 @@ const save = () => store.set('trip', trip);
 let lastBoard = null, shiftMsg = '', shiftUntil = 0;
 function checkShift(cur, i){
   if (!cur || trip.stage === 'ride') { lastBoard = null; return; }
+  if (cur.est) return;                              // 未有到站資料前嘅估計唔算：只比較真實到站時間
   const key = i + ':' + trip.stage;
   if (lastBoard && lastBoard.key === key && Math.abs(cur.boardT - lastBoard.t) >= 120000) {
     const later = cur.boardT > lastBoard.t;
