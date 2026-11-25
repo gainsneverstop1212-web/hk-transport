@@ -171,15 +171,17 @@ const aliasOf = q => { const k = q.trim().toLowerCase(); const a = ALIAS.find(([
 export function searchStops(q, limit = 8){
   q = q.trim().toLowerCase();
   if (!q || /^[\x00-\x7f]$/.test(q)) return [];
+  const qStn = /(站| station)$/.test(q) ? q.replace(/(站| station)$/, '') : '';
   const seen = new Map();
   for (const [id, s] of Object.entries(S.DB.stopList)) {
     if (!S.IDX.has(id)) continue;
     const zh = s.name.zh || '', en = (s.name.en || '').toLowerCase();
-    if (!zh.toLowerCase().includes(q) && !en.includes(q)) continue;
+    // 「香港站」都要搵到港鐵「香港」站（車站資料入面冇「站」字）
+    if (!zh.toLowerCase().includes(q) && !en.includes(q) && !(qStn && (zh === qStn || en === qStn))) continue;
     // 同名車站如果相距超過 1 公里，當係唔同地方（例如全港有幾個「新圍村」）
     const key = [...seen.keys()].find(k => k.startsWith(zh + '|') && dist(seen.get(k), s.location) < 1000) || zh + '|' + seen.size;
     if (!seen.has(key)) seen.set(key, {kind: 'stop', name: s.name, lat: s.location.lat, lng: s.location.lng, cos: new Set(), routes: new Set(), rail: false,
-      score: zh === q || zh === q + '站' || en === q ? 0 : zh.startsWith(q) || en.startsWith(q) ? 1 : 2});
+      score: zh === q || zh === q + '站' || zh + '站' === q || en === q || en + ' station' === q ? 0 : zh.startsWith(q) || en.startsWith(q) ? 1 : 2});
     const x = seen.get(key);
     for (const e of S.IDX.get(id)) { x.cos.add(e.co); if (e.co === 'mtr' || e.co === 'lightRail') x.rail = true; if (x.routes.size < 4 && e.co !== 'mtr') x.routes.add(S.DB.routeList[e.key].route.replace('*', '')); }
     if (seen.size > 300) break;
@@ -190,23 +192,78 @@ export function searchStops(q, limit = 8){
   for (const v of vals) if (v.routes.size) v.sub = {zh: '途經 ' + [...v.routes].join('、'), en: 'Routes ' + [...v.routes].join(', ')};
   return vals.sort((a, b) => (a.score - (a.rail ? 1.5 : 0)) - (b.score - (b.rail ? 1.5 : 0)) || a.name.zh.length - b.name.zh.length).slice(0, limit);
 }
+/* ---------- 地點搜尋：政府地址（大廈、屋苑、門牌）+ OpenStreetMap（商店、餐廳、廟宇、醫院、地標） ---------- */
+// 兩個來源一齊搵，再按「名同你打嘅字有幾吻合」排次序；唔吻合嘅（例如打「麥當勞 旺角」出咗「豪華閣」）排到最後或者唔要
+const norm = s => String(s || '').toLowerCase().replace(/[\s·・,，.。()（）\-–—'’"]/g, '');
+const zhPart = s => { const m = /^([^A-Za-z]*[^\x00-\x7f][^A-Za-z]*?)\s+([A-Za-z0-9].*)$/.exec(String(s || '').trim()); return m ? [m[1].trim(), m[2].trim()] : [String(s || '').trim(), String(s || '').trim()]; };
+// OpenStreetMap 類別 → 中文（顯示喺地點名下面，一眼分到係餐廳定醫院）
+const CAT = {restaurant: ['餐廳', 'Restaurant'], fast_food: ['快餐店', 'Fast food'], cafe: ['咖啡店', 'Café'], hospital: ['醫院', 'Hospital'], clinic: ['診所', 'Clinic'],
+  place_of_worship: ['廟宇／教堂', 'Place of worship'], park: ['公園', 'Park'], school: ['學校', 'School'], university: ['大學', 'University'], college: ['大專', 'College'],
+  mall: ['商場', 'Mall'], supermarket: ['超級市場', 'Supermarket'], marketplace: ['街市', 'Market'], hotel: ['酒店', 'Hotel'], museum: ['博物館', 'Museum'], arts_centre: ['藝術中心', 'Arts centre'],
+  library: ['圖書館', 'Library'], sports_centre: ['體育館', 'Sports centre'], stadium: ['運動場', 'Stadium'], cinema: ['戲院', 'Cinema'], bank: ['銀行', 'Bank'], post_office: ['郵政局', 'Post office'],
+  police: ['警署', 'Police'], townhall: ['政府大樓', 'Government'], community_centre: ['社區中心', 'Community centre'], attraction: ['景點', 'Attraction'], viewpoint: ['觀景點', 'Viewpoint'],
+  beach: ['泳灘', 'Beach'], ferry_terminal: ['碼頭', 'Ferry pier'], pier: ['碼頭', 'Pier'], train_station: ['車站', 'Station'], station: ['車站', 'Station'], residential: ['住宅', 'Residential'],
+  apartments: ['住宅', 'Residential'], office: ['寫字樓', 'Office'], commercial: ['商業大廈', 'Commercial'], primary: ['街道', 'Road'], secondary: ['街道', 'Road'], tertiary: ['街道', 'Road']};
+const SKIP = new Set(['bus_stop', 'platform', 'stop_position', 'train_station', 'station', 'halt', 'subway_entrance', 'tram_stop', 'footway', 'steps', 'path', 'service', 'track', 'cycleway', 'pedestrian', 'elevator', 'entrance', 'bench', 'waste_basket', 'toilets']);
+const HK_BOX = '113.82,22.13,114.45,22.58';
+function timed(url, opt = {}, ms = 6000){
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), ms);
+  return fetch(url, {...opt, signal: ctl.signal}).finally(() => clearTimeout(t));
+}
+async function alsSearch(q){
+  const r = await timed('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=10', {headers: {Accept: 'application/json'}});
+  const j = await r.json(), out = [];
+  for (const s of j.SuggestedAddress || []) {
+    const p = s.Address?.PremisesAddress || {}, c = p.ChiPremisesAddress || {}, e = p.EngPremisesAddress || {}, g = p.GeospatialInformation || {};
+    const zh = c.BuildingName || c.ChiEstate?.EstateName || [c.ChiStreet?.StreetName, c.ChiStreet?.BuildingNoFrom && c.ChiStreet.BuildingNoFrom + '號'].filter(Boolean).join('');
+    const en = e.BuildingName || e.EngEstate?.EstateName || [e.EngStreet?.BuildingNoFrom, e.EngStreet?.StreetName].filter(Boolean).join(' ');
+    const sub = [c.ChiStreet?.StreetName && (c.ChiStreet.StreetName + (c.ChiStreet.BuildingNoFrom ? c.ChiStreet.BuildingNoFrom + '號' : '')), c.ChiDistrict?.DcDistrict].filter(Boolean).join(' · ');
+    const subEn = [e.EngStreet?.BuildingNoFrom, e.EngStreet?.StreetName, e.EngDistrict?.DcDistrict].filter(Boolean).join(' ');
+    if (!g.Latitude || !zh) continue;
+    out.push({kind: 'place', src: 'als', name: {zh, en: en || zh}, sub: {zh: sub, en: subEn}, lat: +g.Latitude, lng: +g.Longitude});
+  }
+  return out;
+}
+async function osmSearch(q){
+  // 唔會傳送用家位置：附近優先嘅排序喺部機自己計
+  const r = await timed(`https://photon.komoot.io/api/?limit=12&bbox=${HK_BOX}&q=${encodeURIComponent(q)}`);
+  const j = await r.json(), out = [];
+  for (const f of j.features || []) {
+    const pr = f.properties || {}, [lng, lat] = f.geometry?.coordinates || [];
+    if (!pr.name || lat == null || SKIP.has(pr.osm_value) || !inHK({lat, lng})) continue;
+    const [zh, en] = zhPart(pr.name), [dzh, den] = zhPart(pr.district || pr.city || '');
+    const cat = CAT[pr.osm_value];
+    const street = pr.street ? zhPart(pr.street) : null;
+    const subZh = [cat?.[0], street && (street[0] + (pr.housenumber ? pr.housenumber + '號' : '')), dzh].filter(Boolean).join(' · ');
+    const subEn = [cat?.[1], street && [pr.housenumber, street[1]].filter(Boolean).join(' '), den].filter(Boolean).join(' · ');
+    out.push({kind: 'place', src: 'osm', name: {zh, en}, sub: {zh: subZh, en: subEn}, lat, lng, road: /^(primary|secondary|tertiary|residential|unclassified|living_street)$/.test(pr.osm_value) && pr.osm_key === 'highway'});
+  }
+  return out;
+}
+// 吻合程度：0 完全一樣、1 開頭一樣、2 包含成句、3 每個字詞都喺名或者地址度、4 部分吻合、9 唔吻合
+function matchScore(x, q){
+  const nq = norm(q), name = norm(x.name.zh) + '|' + norm(x.name.en), all = name + '|' + norm(x.sub?.zh) + '|' + norm(x.sub?.en);
+  const toks = q.trim().toLowerCase().split(/\s+/).map(norm).filter(Boolean);
+  if (norm(x.name.zh) === nq || norm(x.name.en) === nq) return 0;
+  if (norm(x.name.zh).startsWith(nq) || norm(x.name.en).startsWith(nq)) return 1;
+  if (name.includes(nq)) return 2;
+  if (toks.length > 1 && toks.every(t => all.includes(t))) return 3;
+  if (toks.some(t => t.length >= 2 && name.includes(t))) return 4;
+  // 中文：最少有兩個連住嘅字吻合
+  for (let i = 0; i + 2 <= nq.length; i++) if (/[^\x00-\x7f]/.test(nq[i]) && name.includes(nq.slice(i, i + 2))) return 5;
+  return 9;
+}
 export async function searchPlaces(q){
-  q = q.trim(); if (q.length < 2) return [];
-  try {
-    const r = await fetch('https://www.als.gov.hk/lookup?q=' + encodeURIComponent(q) + '&n=6', {headers: {Accept: 'application/json'}});
-    const j = await r.json(), out = [], seen = new Set();
-    for (const s of j.SuggestedAddress || []) {
-      const p = s.Address?.PremisesAddress || {}, c = p.ChiPremisesAddress || {}, e = p.EngPremisesAddress || {}, g = p.GeospatialInformation || {};
-      const zh = c.BuildingName || c.ChiEstate?.EstateName || [c.ChiStreet?.StreetName, c.ChiStreet?.BuildingNoFrom && c.ChiStreet.BuildingNoFrom + '號'].filter(Boolean).join('');
-      const en = e.BuildingName || e.EngEstate?.EstateName || [e.EngStreet?.BuildingNoFrom, e.EngStreet?.StreetName].filter(Boolean).join(' ');
-      const sub = [c.ChiStreet?.StreetName && (c.ChiStreet.StreetName + (c.ChiStreet.BuildingNoFrom ? c.ChiStreet.BuildingNoFrom + '號' : '')), c.ChiDistrict?.DcDistrict].filter(Boolean).join(' · ');
-      const subEn = [e.EngStreet?.BuildingNoFrom, e.EngStreet?.StreetName, e.EngDistrict?.DcDistrict].filter(Boolean).join(' ');
-      if (!g.Latitude || !zh || seen.has(zh)) continue;
-      seen.add(zh);
-      out.push({kind: 'place', name: {zh, en: en || zh}, sub: {zh: sub, en: subEn}, lat: +g.Latitude, lng: +g.Longitude});
-    }
-    return out;
-  } catch { return []; }
+  q = q.trim(); if (q.length < 2) return {list: [], failed: false};
+  const [a, o] = await Promise.allSettled([alsSearch(q), osmSearch(q)]);
+  const failed = a.status === 'rejected' && o.status === 'rejected';
+  const addrLike = /\d|號|街|道|路|里|徑/.test(q);
+  const raw = [...(o.value || []), ...(a.value || [])].map(x => ({...x, ms: matchScore(x, q) + (x.road ? 1.5 : 0) + (x.src === (addrLike ? 'osm' : 'als') ? 0.3 : 0)}));
+  const ranked = raw.filter(x => x.ms < 9).sort((x, y) => x.ms - y.ms || (S.here ? dist(S.here, x) - dist(S.here, y) : 0));
+  // 同名、相距唔遠就當同一個地方
+  const out = [];
+  for (const x of ranked) if (!out.some(y => norm(y.name.zh) === norm(x.name.zh) && dist(x, y) < 400)) out.push(x);   // 醫院、體育園呢類大地方，兩個來源嘅點可以相距幾百米
+  return {list: out.slice(0, 8), failed};
 }
 // 一個全域監聽：撳出面就收埋所有建議清單（唔會每個搜尋框加一個）
 document.addEventListener('click', e => {
@@ -214,7 +271,7 @@ document.addEventListener('click', e => {
 });
 // 搜尋框 + 建議清單；onPick({lat,lng,label,kind})
 export function attachPicker(input, box, onPick, opt = {}){
-  let tq, seq = 0, list = [];
+  let tq, seq = 0, list = [], placesFailed = false;
   const draw = (alias, stops, plc, loading) => {
     const extra = [];
     if (opt.here && S.here) extra.push({kind: 'here', name: S.here.mode === 'manual' ? {zh: `目前地點：${S.here.label}`, en: `Current: ${S.here.label}`} : {zh: '你嘅位置（GPS）', en: 'Your location (GPS)'}, lat: S.here.lat, lng: S.here.lng});
@@ -227,8 +284,15 @@ export function attachPicker(input, box, onPick, opt = {}){
     const savedHit = q ? extra.filter(x => x.kind === 'saved' && nm(x.name).toLowerCase().includes(q.toLowerCase())) : extra;
     // 次序：常用叫法 → 港鐵／輕鐵站同名稱完全啱嘅車站 → 常用地點 → 地方（大廈）→ 其他車站
     const top = stops.filter(x => x.rail || x.score === 0), rest = stops.filter(x => !(x.rail || x.score === 0));
-    list = [...alias, ...top, ...savedHit, ...plc.slice(0, opt.places ? 5 : 0), ...rest];
-    if (!list.length && !loading) { box.innerHTML = q ? `<div class="empty">${L('搵唔到', 'No results')}</div>` : ''; box.classList.toggle('on', !!q); return; }
+    // 地點吻合程度好（名完全一樣或者開頭一樣）就排喺車站前面，例如打「黃大仙祠」先出個廟，唔係出巴士站
+    // 港鐵／輕鐵站名完全一樣永遠排先（可以直接規劃），之後先到吻合嘅地點、巴士站
+    const strong = plc.filter(x => x.ms <= 1), weak = plc.filter(x => x.ms > 1);
+    const rail = top.filter(x => x.rail && x.score === 0), top2 = top.filter(x => !rail.includes(x));
+    list = [...alias, ...rail, ...strong, ...top2, ...savedHit, ...weak, ...rest].slice(0, 14);
+    if (!list.length && !loading) {
+      box.innerHTML = q ? `<div class="empty"><b>${L(`搵唔到「${esc(q)}」`, `No results for “${esc(q)}”`)}</b><small>${placesFailed ? L('連唔到地點搜尋，請檢查網絡再試。', 'Place search is unreachable — check your connection.') : L('試下：大廈或屋苑名、街道同門牌（例如「彌敦道 700號」）、商場或者港鐵站名。', 'Try a building or estate name, a street and number, a mall or an MTR station.')}</small></div>` : '';
+      box.classList.toggle('on', !!q); return;
+    }
     box.innerHTML = list.map((x, i) => `<button type="button" role="option" data-i="${i}">
       <span class="k k-${x.kind}">${x.kind === 'place' ? icon.pin : x.kind === 'here' ? icon.gps : x.kind === 'saved' ? icon.star(true) : x.kind === 'alias' ? (x.station ? icon.rail : icon.landmark) : icon.bus}</span>
       <span class="nm">${esc(nm(x.name))}${x.sub ? `<small>${esc(nm(x.sub))}</small>` : ''}</span>
@@ -243,7 +307,8 @@ export function attachPicker(input, box, onPick, opt = {}){
     const stops = searchStops(al?.q || q, 10);
     const wantPlaces = opt.places && (al?.q || q).trim().length >= 2;
     draw(alias, stops, [], wantPlaces);
-    if (wantPlaces) tq = setTimeout(async () => { const p = await searchPlaces(al?.q || q); if (my === seq) draw(alias, stops, p, false); }, 350);
+    placesFailed = false;
+    if (wantPlaces) tq = setTimeout(async () => { const p = await searchPlaces(al?.q || q); if (my !== seq) return; placesFailed = p.failed; draw(alias, stops, p.list, false); }, 300);
   });
   let picked = false;
   input.addEventListener('focus', () => { picked = false; if (!input.value) draw([], [], [], false); else input.select?.(); });

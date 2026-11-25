@@ -1,5 +1,5 @@
 // 港住走 · 路線搜尋 + 路線詳情
-import {S, $, esc, store, L, nm, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, lrtColor, tilesFor, LINES, coTag, coName, lineName, lineColor, darkText, stopLoc, stopName,
+import {S, $, esc, store, L, nm, doorMin, mins, hhmm, flaps, routeTiles, lineTiles, lrtTiles, lrtColor, tilesFor, LINES, coTag, coName, lineName, lineColor, darkText, stopLoc, stopName,
   dist, walkMin, serviceInfo, rideMin, cumTimes, fareAt, legFare, money, FERRY, icon, toast, stopsWithin} from './core.js';
 import {cycle, etaFor, mtrBoard, lrtBoard} from './eta.js';
 import {openPage, starBtn, toggleFav, isFav, on, openSheet, closeSheet} from './ui.js';
@@ -153,13 +153,19 @@ function draw(){
   $('keypad').querySelector('.kp-num').innerHTML = [...nums, 'del', '0', 'go'].map(k => k === 'go' ? `<span></span>`
     : `<button type="button" data-k="${k}" ${k !== 'del' && !nexts.has(k) ? 'disabled' : ''} aria-label="${k === 'del' ? L('刪除', 'Delete') : k}">${k === 'del' ? '⌫' : k}</button>`).join('');
   const lets = [...nexts].filter(c => !/[0-9]/.test(c)).sort();
-  $('keypad').querySelector('.kp-let').innerHTML = lets.map(c => `<button type="button" data-k="${esc(c)}">${esc(c)}</button>`).join('');
+  const kl = $('keypad').querySelector('.kp-let');
+  kl.innerHTML = lets.map(c => `<button type="button" data-k="${esc(c)}">${esc(c)}</button>`).join('');
+  // 字母多過 4 行：每粒掣矮少少，全部字母同數字鍵一樣高、唔使喺鍵盤入面再碌先搵到（例如「X」）
+  const rows = Math.ceil(lets.length / 3);
+  kl.style.setProperty('--kh', rows > 4 ? Math.max(34, Math.floor((224 - (rows - 1) * 6) / rows)) + 'px' : '50px');
   if (!q) {
     const rec = store.get('recentRoutes', []).filter(k => S.DB.routeList[k]);
     list.innerHTML = (filt === 'all' ? railShortcuts() : '') + (rec.length ? `<p class="lbl pad">${L('最近睇過', 'Recent')}</p>` + rec.map(itemHtml).join('') : `<p class="hint">${L('用下面嘅鍵盤輸入巴士或者小巴號碼。只會亮起有路線嘅數字同字母。', 'Type a bus or minibus number below. Only keys that lead to a real route light up.')}</p>`);
     return;
   }
-  keys.sort((a, b) => { const A = S.DB.routeList[a], B = S.DB.routeList[b]; return natural(A.route, B.route) || A.co[0].localeCompare(B.co[0]) || String(A.serviceType).localeCompare(String(B.serviceType)); });
+  // 次序：號碼完全一樣排先 → 號碼 → 專營巴士（九巴、城巴）先過小巴 → 正常班先過特別班
+  const RANK = {kmb: 0, ctb: 0, nlb: 1, lrtfeeder: 1, gmb: 2}, rk = r => RANK[r.co[0]] ?? 3, ex = r => r.route.toUpperCase() === q ? 0 : 1;
+  keys.sort((a, b) => { const A = S.DB.routeList[a], B = S.DB.routeList[b]; return ex(A) - ex(B) || natural(A.route, B.route) || rk(A) - rk(B) || String(A.serviceType).localeCompare(String(B.serviceType)); });
   list.innerHTML = keys.slice(0, 80).map(itemHtml).join('') || `<p class="hint">${L('冇呢條路線', 'No such route')}</p>`;
 }
 function itemHtml(k){
@@ -299,12 +305,12 @@ export function openRoute(key, focusStop){
     }).join('');
     const tb = pg.querySelector('#tripbar');
     if (board != null) {
-      const walk = S.here ? walkMin(dist(S.here, stopLoc(stops[board]))) : 0;
+      const walk = S.here ? walkMin(dist(S.here, stopLoc(stops[board]))) : 0, door = S.here ? doorMin(S.here) : 0;   // 落樓＋等𨋢，同附近頁、規劃頁一致
       const ride = alight != null ? Math.round(rideMin(r, co, board, alight)) : null, fare = legFare(r, co, board, alight);
       tb.hidden = false;
-      tb.innerHTML = `<div class="tb-t"><b>${esc(stopName(stops[board]))}${alight != null ? ' → ' + esc(stopName(stops[alight])) : ''}</b><small>${[S.here ? L(`步行 ${walk} 分鐘`, `${walk} min walk`) : '', ride != null ? L(`坐約 ${ride} 分鐘`, `~${ride} min ride`) : L('未揀落車站', 'No alight stop yet'), fare != null ? money(fare) : ''].filter(Boolean).join(' · ')}</small></div>
+      tb.innerHTML = `<div class="tb-t"><b>${esc(stopName(stops[board]))}${alight != null ? ' → ' + esc(stopName(stops[alight])) : ''}</b><small>${[S.here ? (door ? L(`落樓 ${door} + 行 ${walk} 分鐘`, `${door} min lift + ${walk} min walk`) : L(`步行 ${walk} 分鐘`, `${walk} min walk`)) : '', ride != null ? L(`坐約 ${ride} 分鐘`, `~${ride} min ride`) : L('未揀落車站', 'No alight stop yet'), fare != null ? money(fare) : ''].filter(Boolean).join(' · ')}</small></div>
         <button class="btn-y" id="tbGo" type="button">${icon.door}<span>${L('出門倒數', 'Countdown')}</span></button>`;
-      tb.querySelector('#tbGo').onclick = () => startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: walk,
+      tb.querySelector('#tbGo').onclick = () => startTrip({from: S.here ? {lat: S.here.lat, lng: S.here.lng, label: S.here.label} : null, walk0: walk + door, door,
         legs: [{key, co, board: stops[board], bseq: board, alight: alight != null ? stops[alight] : null, aseq: alight}], walkEnd: 0,
         to: alight != null ? {label: stopName(stops[alight]), ...stopLoc(stops[alight])} : null});
     } else tb.hidden = true;

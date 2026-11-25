@@ -192,8 +192,8 @@ function advice(row, walk){
   const ok = list.find(e => mins(e.t) >= walk);
   if (!ok) return `<span class="adv late">${L(`出門要 ${walk} 分鐘，趕唔切`, `${walk} min to get there — can't make it`)}</span>`;
   const left = mins(ok.t) - walk;
-  const txt = left <= 0 ? L('而家出發', 'Leave now') : L(`${left} 分鐘後出發`, `Leave in ${left} min`);
-  return `<span class="adv go">${ok !== list[0] ? L('趕唔切呢班 · 下一班 ', 'Too late for this one · next: ') : ''}${txt}</span>`;
+  const txt = left <= 0 ? L('而家出門', 'Leave now') : L(`${left} 分鐘後出門`, `leave in ${left} min`);
+  return `<span class="adv go">${ok !== list[0] ? L('呢班趕唔切，搭下一班：', 'Missed this one · next: ') : ''}${txt}</span>`;
 }
 function rowHtml(g, row){
   let rt, sub, fid, label;
