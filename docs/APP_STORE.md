@@ -37,7 +37,7 @@ npm run ios
 ## 提交前清單
 
 - App icon：1024×1024 PNG，冇透明背景（已經準備好：`resources/icon-1024.png`，方角、冇圓角，系統會自己切圓角）
-- 私隱政策網址：https://gainsneverstop1212-web.github.io/hk-transport/privacy.html（上架前要填好頁入面紅色【待填】嘅營運者名稱、聯絡電郵、Firestore 區域）
+- 私隱政策網址：https://gainsneverstop1212-web.github.io/hk-transport/privacy.html（上架前要填好頁入面紅色【待填】嘅營運者名稱、聯絡電郵；Firestore 區域寫咗 asia-east2，要喺 Firebase console 核實）
 - App Privacy 標籤：即時定位只喺手機用、唔上傳；但登入咗會同步屋企／公司位置、通勤紀錄、電郵同名，要申報為「連結身份、只作 app 功能」
 - 截圖：iPhone 6.9 吋
 - 數據來源頁：DATA.GOV.HK、hkbus/hk-bus-crawling、地政總署
