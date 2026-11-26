@@ -57,6 +57,7 @@ a{color:#e6e6e6}
 .btn-y,.btn-d{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:44px;padding:0 16px;border:0;border-radius:0;font:700 17px/1 var(--disp);letter-spacing:.02em}
 .btn-y{background:var(--yellow);color:var(--ink)}
 .btn-d{background:#232323;color:#eee;border:1px solid #3a3a3a}
+a.btn-d{text-decoration:none}
 .btn-y.sm,.btn-d.sm{height:38px;padding:0 12px;font-size:15px}
 .btn-y.big,.btn-d.big{height:54px;width:100%;font-size:19px}
 .btn-y[aria-busy] svg{animation:spin 1.2s linear infinite}
@@ -698,6 +699,7 @@ body.bigtext .star{width:48px;height:48px}
 .acct-b.google{background:#fff;color:#1f1f1f;border:1px solid #dadce0}
 .acct-b:disabled{opacity:.6}
 .acct-p{color:#8a8a8a;font-size:12px;line-height:1.4}
+.acct-p a{color:#bdbdbd}
 .acct.in{grid-template-columns:auto minmax(0,1fr);align-items:center}
 .acct-av{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--yellow);color:var(--ink);font:800 20px/1 var(--disp)}
 .acct-x{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}

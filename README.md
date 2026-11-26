@@ -4,14 +4,14 @@
 
 ## 出門助手（第六版）
 
-- **自動學識通勤習慣**：用出門倒數 3 日或以上，平時出門前後一開 app 就直接見到「X 分鐘後出門」（紀錄只存喺部機）；App Store 版每日預約系統通知
+- **自動學識通勤習慣**：用出門倒數 3 日或以上，平時出門前後一開 app 就直接見到「X 分鐘後出門」（紀錄存喺部機，登入咗會同步到帳戶）；App Store 版每日預約系統通知
 - **路線出事先通知**：運輸署特別交通消息或港鐵延誤影響你常用／通勤路線，即刻通知，常用頁自動改用第二條路線
 - **天氣提示**：落雨、黃雨、紅雨、黑雨、風球自動加長步行時間（香港天文台開放數據）
 - **分享行程**：一撳 WhatsApp 話俾人知你搭緊咩車、幾時到；對方開連結（share.html）見到實時到站，唔使裝 app
 - **轉車實時判斷**：搭緊車就講你知落車後邊班趕得切、邊班趕唔切
 - **準時度紀錄**：GitHub Actions 定時記錄到站預報，累積「通常遲幾多」同「幽靈巴士」數據，見 [tools/punctuality](tools/punctuality/README.md)
 
-- **帳戶（Apple／Google 登入）**：設定、常用地點（連樓層）、常用路線、通勤紀錄同步到雲端；開通步驟見 [docs/ACCOUNT_SETUP.md](docs/ACCOUNT_SETUP.md)
+- **帳戶（Apple／Google 登入）**：設定、常用地點（連樓層）、常用路線、通勤紀錄同步到雲端；開通步驟見 [docs/ACCOUNT_SETUP.md](docs/ACCOUNT_SETUP.md)；[私隱政策](privacy.html)
 
 - 數據：運輸署 DATA.GOV.HK 及各營辦商開放數據；路線整合來自 [hkbus/hk-bus-crawling](https://github.com/hkbus/hk-bus-crawling)
 - PWA：可以「加到主畫面」
