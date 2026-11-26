@@ -62,7 +62,8 @@ async function open(path, label){
   });
   // 自己嘅檔案 404／500（例如 import 咗一個唔存在嘅 js）
   page.on('response', r => { if (own(r.url()) && r.status() >= 400) errors.push(tag(`HTTP ${r.status()} ${r.url().slice(base.length - 1)}`)); });
-  page.on('requestfailed', r => { if (own(r.url())) errors.push(tag(`載入失敗 ${r.url().slice(base.length - 1)}: ${r.failure()?.errorText}`)); });
+  // net::ERR_ABORTED 係瀏覽器自己取消（例如對時用嘅 HEAD 請求被下一個取代），唔係檔案壞咗；真係 404 上面已經捉到
+  page.on('requestfailed', r => { if (own(r.url()) && !/ERR_ABORTED/.test(r.failure()?.errorText || '')) errors.push(tag(`載入失敗 ${r.url().slice(base.length - 1)}: ${r.failure()?.errorText}`)); });
   await page.goto(base + path, {waitUntil: 'load'});
   return page;
 }
