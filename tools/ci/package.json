@@ -1,0 +1,9 @@
+{
+  "name": "hk-transport-ci",
+  "private": true,
+  "description": "港住走 · 自動檢查用嘅工具（只喺 GitHub Actions 用，唔會入 app）",
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}
