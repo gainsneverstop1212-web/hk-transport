@@ -11,6 +11,8 @@ import {fileURLToPath} from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const RAW = process.argv[2] || join(here, 'raw'), OUT = process.argv[3] || join(here, 'summary.json');
 const {watch} = JSON.parse(readFileSync(join(here, 'watch.json'), 'utf8'));
+const wkey = w => [w.co, w.route, w.dir, w.st || 1, w.stop].join(':');   // 同 collect.mjs 一樣
+const keyIdx = new Map(watch.map((w, i) => [wkey(w), i]));
 const MAX_GAP = 150, MATCH = 120, GHOST_LEAD = 180, LOOK = 600;
 
 export function analyseSeries(samples){
@@ -51,9 +53,11 @@ function main(){
     for (const line of readFileSync(join(RAW, f), 'utf8').split('\n')) {
       if (!line.trim()) continue;
       let r; try { r = JSON.parse(line); } catch { continue; }
-      if (r.err || !per[r.w]) continue;
-      if (!byW.has(r.w)) byW.set(r.w, []);
-      byW.get(r.w).push(r);
+      if (r.err) continue;
+      const w = r.k != null ? keyIdx.get(r.k) : r.w;   // 舊資料冇 k，用回次序
+      if (w == null || !per[w]) continue;
+      if (!byW.has(w)) byW.set(w, []);
+      byW.get(w).push(r);
     }
     for (const [w, arr] of byW) {
       arr.sort((a, b) => a.t - b.t);

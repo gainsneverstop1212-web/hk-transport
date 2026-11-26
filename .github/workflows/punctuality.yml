@@ -1,9 +1,12 @@
-# 港住走 · 準時度紀錄：每 10 分鐘行一次，每次連續記錄 9 分鐘（每 30 秒一次），結果存喺 punctuality-data 分支
+# 港住走 · 準時度紀錄：每 10 分鐘觸發一次，每次連續記錄 14 分鐘（每 30 秒一次），結果存喺 punctuality-data 分支
+# 每次記錄長過觸發間隔，加上 concurrency 排隊，一個排程被 GitHub 跳過都唔會斷資料；
+# 排隊時被取代嘅觸發會喺 Actions 頁顯示「cancelled」，係正常。
 # 公開 repo 嘅 GitHub Actions 免費。要記錄邊啲路線，改 tools/punctuality/watch.json。
 name: punctuality
 on:
   schedule:
-    - cron: '*/10 22-23,0-15 * * *'   # UTC，即香港時間 06:00–23:59
+    # 避開整點同 0/10/20 分：GitHub 喺整點最繁忙，排程最易被延遲或者跳過
+    - cron: '4-54/10 22-23,0-15 * * *'   # UTC，即香港時間 06:04–23:54
   workflow_dispatch:
 permissions:
   contents: write
@@ -13,7 +16,7 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,10 +32,10 @@ jobs:
             git worktree add --detach data
             cd data && git checkout --orphan punctuality-data && git rm -rfq . && cd ..
           fi
-      - name: 記錄到站預報（9 分鐘）
+      - name: 記錄到站預報（14 分鐘）
         run: node tools/punctuality/collect.mjs data/raw
         env:
-          DURATION_SEC: '540'
+          DURATION_SEC: '840'
           INTERVAL_SEC: '30'
       - name: 分析
         run: node tools/punctuality/analyze.mjs data/raw data/summary.json
