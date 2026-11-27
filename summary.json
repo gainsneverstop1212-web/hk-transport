@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-27T14:05:26.348Z",
+ "generated": "2026-11-27T22:40:50.977Z",
  "note": "遲 = 實際到站減 10 分鐘前嘅預報（分鐘，正數係比預報遲）；幽靈 = 預報 3 分鐘以上就到但突然消失",
  "watch": [
   {
@@ -8,15 +8,15 @@
    "dir": "O",
    "stop": "CC811B604DD883AE",
    "name": "九巴 1A（去程）第 13 站",
-   "days": 3,
-   "samples": 137,
-   "arrivals": 3,
+   "days": 4,
+   "samples": 165,
+   "arrivals": 4,
    "ghosts": 0,
    "ghostRate": 0,
    "lateAvg": -0.1,
    "lateP90": -0.1,
    "lateN": 1,
-   "schedShare": 30.3
+   "schedShare": 29.4
   },
   {
    "co": "kmb",
@@ -24,15 +24,15 @@
    "dir": "O",
    "stop": "904DEAF7441E3BB8",
    "name": "九巴 1A（去程）第 19 站",
-   "days": 3,
-   "samples": 138,
-   "arrivals": 5,
+   "days": 4,
+   "samples": 166,
+   "arrivals": 6,
    "ghosts": 0,
    "ghostRate": 0,
    "lateAvg": null,
    "lateP90": null,
    "lateN": 0,
-   "schedShare": 16.2
+   "schedShare": 14
   }
  ]
 }
